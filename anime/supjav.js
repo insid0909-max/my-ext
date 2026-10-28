@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.0.3",
+    "version": "0.0.4",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/supjav.js"
@@ -61,23 +61,22 @@ class DefaultExtension extends MProvider {
         this.client = new Client();
     }
 
-    prefs() {
+    // 설정 읽기는 전부 try 안에서 (설치 중엔 설정이 없어 읽기가 오류를 냄 → 설치가 조용히 멈춤, 망가요미 #1064)
+    pref(key) {
         try {
-            return new SharedPreferences();
+            return String(new SharedPreferences().get(key) || "").trim();
         } catch (e) {
-            return null;
+            return "";
         }
     }
 
     getBaseUrl() {
-        const p = this.prefs();
-        const v = p ? String(p.get("supjav_domain") || "").trim().replace(/\/+$/, "") : "";
+        const v = this.pref("supjav_domain").replace(/\/+$/, "");
         return DOMAIN_RE.test(v) ? v : DEFAULT_BASE_URL;
     }
 
     listUrl() {
-        const p = this.prefs();
-        let v = p ? String(p.get("supjav_list") || "").trim() : "";
+        let v = this.pref("supjav_list");
         if (!/^https?:\/\//.test(v)) v = DEFAULT_LIST;
         return v.replace(/^https?:\/\/(?:www\.)?supjav\.[a-z]{2,6}/, this.getBaseUrl());
     }

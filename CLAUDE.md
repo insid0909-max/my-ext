@@ -6,4 +6,4 @@
 - git config user.name "insid0909-max", user.email "266083559+insid0909-max@users.noreply.github.com". 지메일 넣지 않음.
 - main 에 바로 올림(앱이 main raw 를 읽음). 파일 version 과 index.json version 같이 올리기, `node --check` 통과.
 - SupJav(anime/supjav.js, id 1720450901): 0.0.1 은 사이트 구조를 못 보고(해외·서버에서 Cloudflare 확인에 막힘) 짐작으로 만듦. 재생은 웹뷰로 서버 버튼을 눌러 iframe 주소를 모으고, iframe 을 웹뷰로 열어 m3u8/mp4 를 받음, 안 되면 앱 내장 추출기.
-- 설치 시 앱이 getHeaders 를 부름 → 여기서 SharedPreferences 를 읽으면 설치가 조용히 멈춤(망가요미 #1064, 최신 앱에서만 고쳐짐). getHeaders 에서 설정 읽지 말 것 (0.0.3).
+- 설치 시 앱이 getHeaders 를 부름 → 여기서 SharedPreferences 를 읽으면 설치가 조용히 멈춤(망가요미 #1064, 최신 앱에서만 고쳐짐). getHeaders·getFilterList 등 설치 때 불리는 곳에서 설정은 반드시 try 안에서 읽을 것 (0.0.4).
