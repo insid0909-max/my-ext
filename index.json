@@ -1,0 +1,24 @@
+[
+  {
+    "name": "SupJav",
+    "id": 1720450901,
+    "baseUrl": "https://supjav.com",
+    "lang": "ko",
+    "typeSource": "single",
+    "iconUrl": "https://supjav.com/favicon.ico",
+    "dateFormat": "",
+    "dateFormatLocale": "",
+    "isNsfw": true,
+    "hasCloudflare": true,
+    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/supjav.js",
+    "apiUrl": "",
+    "version": "0.0.1",
+    "isManga": false,
+    "itemType": 1,
+    "isFullData": false,
+    "appMinVerReq": "0.5.0",
+    "additionalParams": "",
+    "sourceCodeLanguage": 1,
+    "notes": ""
+  }
+]
