@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.0.2",
+    "version": "0.0.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/missav.js"
@@ -24,7 +24,25 @@ const DEFAULT_LIST = "https://missav123.com/dm270/ko";
 const DOMAIN_RE = /^https:\/\/(?:www\.)?missav[a-z0-9]*\.[a-z]{2,6}$/;
 const SITE_RE = /^https?:\/\/(?:www\.)?missav[a-z0-9]*\.[a-z]{2,6}/;
 // 작품 주소: /ko/abc-123, /dm270/ko/abc-123, /ko/fc2-ppv-1234567 (목록·분류 주소는 제외)
-const POST_RE = /^https?:\/\/[^/]+\/(?:dm\d+\/)?ko\/[a-z0-9]+(?:-[a-z0-9]+)*-\d+[a-z0-9-]*\/?$/i;
+const POST_RE = /^https?:\/\/[^/]+\/(?:dm\d+\/)?ko\/[a-z0-9][a-z0-9_-]*\d[a-z0-9_-]*\/?$/i;
+
+// 분류 (사이트 메뉴 그대로, 2026-10-28 메뉴 기준). 0번은 설정의 목록 주소
+const CATS = [
+    ["설정의 목록", ""],
+    ["최근 업데이트", "/dm539/ko/new"], ["새로운 출시", "/dm635/ko/release"], ["무수정 누출", "/dm817/ko/uncensored-leak"],
+    ["오늘 가장 많이 본", "/dm301/ko/today-hot"], ["주별로 가장 많이 본", "/dm170/ko/weekly-hot"],
+    ["월별 가장 많이 본", "/dm273/ko/monthly-hot"], ["영어 자막", "/dm23/ko/english-subtitle"], ["VR", "/ko/genres/VR"],
+    ["아마추어 · SIRO", "/dm36/ko/siro"], ["아마추어 · LUXU", "/dm34/ko/luxu"], ["아마추어 · GANA", "/dm34/ko/gana"],
+    ["아마추어 · PRESTIGE PREMIUM", "/dm1004/ko/maan"], ["아마추어 · S-CUTE", "/dm38/ko/scute"], ["아마추어 · ARA", "/dm34/ko/ara"],
+    ["일본노모 · FC2", "/dm597/ko/fc2"], ["일본노모 · HEYZO", "/dm2208642/ko/heyzo"], ["일본노모 · Tokyo Hot", "/dm42/ko/tokyohot"],
+    ["일본노모 · 1pondo", "/dm4551174/ko/1pondo"], ["일본노모 · Caribbeancom", "/dm6840521/ko/caribbeancom"],
+    ["일본노모 · Caribbeancompr", "/dm91887/ko/caribbeancompr"], ["일본노모 · 10musume", "/dm6238682/ko/10musume"],
+    ["일본노모 · pacopacomama", "/dm3600557/ko/pacopacomama"], ["일본노모 · Gachinco", "/dm150/ko/gachinco"],
+    ["일본노모 · XXX-AV", "/dm42/ko/xxxav"], ["일본노모 · 유부녀 베기", "/dm37/ko/marriedslash"],
+    ["일본노모 · 야한 4610", "/dm33/ko/naughty4610"], ["일본노모 · 야한 0930", "/dm37/ko/naughty0930"],
+    ["아시아 · Madou", "/dm63/ko/madou"], ["아시아 · TWAV", "/dm31/ko/twav"], ["아시아 · Furuke", "/dm15/ko/furuke"],
+    ["아시아 · 코리안 라이브", "/ko/klive"], ["아시아 · 중국어 라이브", "/ko/clive"],
+];
 
 // 정렬 (사이트 주소의 sort= 값). 0번은 목록 그대로
 const SORTS = [
@@ -134,7 +152,7 @@ class DefaultExtension extends MProvider {
             const cand = String(a.attr("title") || "").trim() || (text.length > 3 ? text : "") || (img ? String(img.attr("alt") || "").trim() : "");
             if (cand.length > item.name.length) item.name = cand;
         }
-        const out = list.filter((x) => x.name || x.imageUrl).map((x) => ({
+        const out = list.filter((x) => x.imageUrl).map((x) => ({
             name: x.name || x.link.split("/").pop().toUpperCase(),
             imageUrl: x.imageUrl,
             link: x.link,
@@ -170,10 +188,12 @@ class DefaultExtension extends MProvider {
             return this.parseList(await this.get(pageUrl(url, page)), page);
         }
         let sort = "";
+        let cat = "";
         for (const f of filters || []) {
             if (f && f.name === "정렬") sort = (SORTS[Number(f.state) || 0] || SORTS[0])[1];
+            if (f && f.name === "분류") cat = (CATS[Number(f.state) || 0] || CATS[0])[1];
         }
-        let url = q ? `${base}/ko/search/${encodeURIComponent(q)}` : this.listUrl();
+        let url = q ? `${base}/ko/search/${encodeURIComponent(q)}` : cat ? base + cat : this.listUrl();
         if (sort) url = setParam(url, "sort", sort);
         return this.parseList(await this.get(pageUrl(url, page)), page);
     }
@@ -246,7 +266,11 @@ class DefaultExtension extends MProvider {
             { type_name: "HeaderFilter", name: "인기 = 설정의 목록 주소, 최신 = 같은 목록 공개일 순" },
             { type_name: "HeaderFilter", name: "검색창에 사이트 목록·작품 주소를 붙여 넣으면 그 화면을 바로 열어요" },
             { type_name: "SeparatorFilter" },
-            { type_name: "HeaderFilter", name: "정렬: 검색어가 있으면 검색 결과, 없으면 설정의 목록에 적용" },
+            { type_name: "HeaderFilter", name: "분류: 검색어가 없을 때 적용 · 정렬: 검색 결과·분류 모두 적용" },
+            {
+                type_name: "SelectFilter", name: "분류", state: 0,
+                values: CATS.map((x, i) => ({ type_name: "SelectOption", name: x[0], value: String(i) })),
+            },
             {
                 type_name: "SelectFilter", name: "정렬", state: 0,
                 values: SORTS.map((x, i) => ({ type_name: "SelectOption", name: x[0], value: String(i) })),
