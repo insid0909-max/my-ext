@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.0.1",
+    "version": "0.0.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/missav.js"
@@ -25,6 +25,12 @@ const DOMAIN_RE = /^https:\/\/(?:www\.)?missav[a-z0-9]*\.[a-z]{2,6}$/;
 const SITE_RE = /^https?:\/\/(?:www\.)?missav[a-z0-9]*\.[a-z]{2,6}/;
 // 작품 주소: /ko/abc-123, /dm270/ko/abc-123, /ko/fc2-ppv-1234567 (목록·분류 주소는 제외)
 const POST_RE = /^https?:\/\/[^/]+\/(?:dm\d+\/)?ko\/[a-z0-9]+(?:-[a-z0-9]+)*-\d+[a-z0-9-]*\/?$/i;
+
+// 정렬 (사이트 주소의 sort= 값). 0번은 목록 그대로
+const SORTS = [
+    ["목록 그대로", ""], ["최근 업데이트", "published_at"], ["발매일", "released_at"], ["저장 많은 순", "saved"],
+    ["오늘 조회", "today_views"], ["주간 조회", "weekly_views"], ["월간 조회", "monthly_views"], ["전체 조회", "views"],
+];
 
 function first(el, css) {
     const l = el ? el.select(css) : [];
@@ -163,8 +169,13 @@ class DefaultExtension extends MProvider {
             }
             return this.parseList(await this.get(pageUrl(url, page)), page);
         }
-        if (!q) return this.getPopular(page);
-        return this.parseList(await this.get(pageUrl(`${base}/ko/search/${encodeURIComponent(q)}`, page)), page);
+        let sort = "";
+        for (const f of filters || []) {
+            if (f && f.name === "정렬") sort = (SORTS[Number(f.state) || 0] || SORTS[0])[1];
+        }
+        let url = q ? `${base}/ko/search/${encodeURIComponent(q)}` : this.listUrl();
+        if (sort) url = setParam(url, "sort", sort);
+        return this.parseList(await this.get(pageUrl(url, page)), page);
     }
 
     async getDetail(url) {
@@ -234,6 +245,12 @@ class DefaultExtension extends MProvider {
             { type_name: "HeaderFilter", name: `📡 주소: ${this.getBaseUrl().replace(/^https?:\/\//, "")}` },
             { type_name: "HeaderFilter", name: "인기 = 설정의 목록 주소, 최신 = 같은 목록 공개일 순" },
             { type_name: "HeaderFilter", name: "검색창에 사이트 목록·작품 주소를 붙여 넣으면 그 화면을 바로 열어요" },
+            { type_name: "SeparatorFilter" },
+            { type_name: "HeaderFilter", name: "정렬: 검색어가 있으면 검색 결과, 없으면 설정의 목록에 적용" },
+            {
+                type_name: "SelectFilter", name: "정렬", state: 0,
+                values: SORTS.map((x, i) => ({ type_name: "SelectOption", name: x[0], value: String(i) })),
+            },
         ];
     }
 
