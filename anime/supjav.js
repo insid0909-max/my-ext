@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.0.4",
+    "version": "0.0.5",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/supjav.js"
@@ -179,8 +179,9 @@ class DefaultExtension extends MProvider {
     // ================= 재생 =================
     async getVideoList(url) {
         if (typeof evaluateJavascriptViaWebview !== "function") throw new Error("이 망가요미 버전은 웹뷰 재생을 지원하지 않아요.");
-        const servers = await this.serverFrames(url);
-        if (!servers.length) throw new Error("재생 서버를 못 찾았어요. 웹뷰로 작품 화면이 열리는지(확인 통과) 봐 주세요.");
+        const found = await this.serverFrames(url);
+        const servers = found.list;
+        if (!servers.length) throw new Error(`재생 서버를 못 찾았어요. 웹뷰로 작품 화면이 열리는지(확인 통과) 봐 주세요 [${found.diag}]`);
         const out = [];
         const why = [];
         for (const s of servers.slice(0, MAX_SERVERS)) {
@@ -188,30 +189,39 @@ class DefaultExtension extends MProvider {
             if (got.videos.length) out.push(...got.videos);
             else why.push(`${s.name}: ${got.why}`);
         }
-        if (!out.length) throw new Error(`영상 주소를 못 찾았어요 [${why.join(" / ").substring(0, 200)}]`);
+        if (!out.length) throw new Error(`영상 주소를 못 찾았어요 [${why.join(" / ").substring(0, 240)} · ${found.diag}]`);
         return out;
     }
 
-    /** 작품 화면에서 서버 버튼을 하나씩 눌러 생기는 재생 화면(iframe) 주소를 모음 */
+    /** 작품 화면에서 서버 버튼을 하나씩 눌러 새로 생기는 재생 화면(iframe) 주소를 모음.
+     *  처음부터 있던 iframe(광고)은 빼고, 버튼을 누른 뒤 새로 생기거나 바뀐 것만 (supremejav·supjav.php 는 처음부터 있어도 인정) */
     async serverFrames(url) {
-        const script = "(function(){var out=[],seen={};" +
-            "function frame(){var f=document.querySelectorAll('iframe');for(var i=0;i<f.length;i++){var s=f[i].src||f[i].getAttribute('data-src')||'';" +
-            "if(/^https?:/.test(s)&&!/google|facebook|twitter|disqus|recaptcha/.test(s))return s;}return '';}" +
-            "var b=document.querySelectorAll('.btn-server, .btns a, [data-link]');var i=0;" +
-            "var f0=frame();if(f0){seen[f0]=1;out.push({name:'기본',src:f0});}" +
-            "function step(){if(i>=b.length||i>=8){window.flutter_inappwebview.callHandler('setResponse',JSON.stringify(out));return;}" +
-            "var btn=b[i++];var nm=(btn.textContent||'').trim().substring(0,20)||('서버'+i);try{btn.click();}catch(e){}" +
-            "var n=0;var t=setInterval(function(){n++;var s=frame();if((s&&!seen[s])||n>10){clearInterval(t);" +
-            "if(s&&!seen[s]){seen[s]=1;out.push({name:nm,src:s});}step();}},200);}" +
+        const script = "(function(){var out=[],seen={},good=/supremejav|supjav\\.php/;" +
+            "function frames(){var r=[],f=document.querySelectorAll('iframe');for(var i=0;i<f.length;i++){var s=f[i].src||f[i].getAttribute('data-src')||'';" +
+            "if(/^https?:/.test(s))r.push(s);}return r;}" +
+            "var base={};frames().forEach(function(s){base[s]=1;if(good.test(s)&&!seen[s]){seen[s]=1;out.push({name:'기본',src:s});}});" +
+            "var b=document.querySelectorAll('.btn-server, .btns a, a[data-link], button[data-link], span[data-link]');var names=[];var i=0;" +
+            "function pick(){var l=frames().filter(function(s){return !seen[s]&&(good.test(s)||!base[s]);});" +
+            "for(var k=0;k<l.length;k++)if(good.test(l[k]))return l[k];return l[0]||'';}" +
+            "function done(){window.flutter_inappwebview.callHandler('setResponse',JSON.stringify({list:out,buttons:names,frames:frames()}));}" +
+            "function step(){if(i>=b.length||i>=10){done();return;}" +
+            "var btn=b[i++];var nm=(btn.textContent||'').trim().substring(0,20)||('서버'+i);names.push(nm);try{btn.click();}catch(e){}" +
+            "var n=0;var t=setInterval(function(){n++;var s=pick();if(s||n>15){clearInterval(t);" +
+            "if(s){seen[s]=1;out.push({name:nm,src:s});}step();}},200);}" +
             "setTimeout(step,500);})();";
+        let info = null;
         try {
-            const timeout = new Promise((r) => setTimeout(() => r(null), 25000));
+            const timeout = new Promise((r) => setTimeout(() => r(null), 30000));
             const res = await Promise.race([evaluateJavascriptViaWebview(url, { "Referer": `${this.getBaseUrl()}/` }, [script]), timeout]);
-            const list = JSON.parse(String(res || "[]"));
-            return Array.isArray(list) ? list.filter((s) => s && /^https?:\/\//.test(s.src)) : [];
+            info = res ? JSON.parse(String(res)) : null;
         } catch (e) {
-            return [];
+            info = null;
         }
+        const host = (u) => String(u || "").replace(/^https?:\/\//, "").split(/[/?#]/)[0];
+        const list = info && Array.isArray(info.list) ? info.list.filter((s) => s && /^https?:\/\//.test(s.src)) : [];
+        const diag = !info ? "작품 화면 웹뷰 응답 없음"
+            : `버튼 ${(info.buttons || []).length}개(${(info.buttons || []).join(",").substring(0, 60)}) · iframe ${(info.frames || []).map(host).join(",").substring(0, 80)}`;
+        return { list, diag };
     }
 
     /** 재생 화면을 웹뷰로 열어 최종 주소와 플레이어가 불러온 영상 주소를 받음 */
@@ -245,7 +255,8 @@ class DefaultExtension extends MProvider {
             const ext = await this.builtIn(href, server.name);
             videos.push(...ext);
         }
-        return { videos, why: info ? `${host} 영상 없음` : "웹뷰 응답 없음" };
+        const from = String(server.src).replace(/^https?:\/\//, "").split(/[/?#]/)[0];
+        return { videos, why: info ? `${from}→${host} 영상 없음` : `${from} 웹뷰 응답 없음` };
     }
 
     /** 앱에 들어 있는 재생 서버 추출기 (있는 것만) */
