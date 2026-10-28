@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.0.1",
+    "version": "0.0.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/xhamster.js"
@@ -577,7 +577,8 @@ class DefaultExtension extends MProvider {
             ms ? `올린 날 ${ymd(ms)}` : String(ve.dateAgo || ""),
         ].filter((x) => x).join(" · ");
         return {
-            name,
+            // 올린 해를 제목 끝에 (MissAV 와 같은 모양)
+            name: ms && name && !/\(\d{4}\)$/.test(name) ? `${name} (${ymd(ms).substring(0, 4)})` : name,
             // og:image 는 흐린 작은 그림일 때가 있어 카드 그림(thumbBig) 먼저
             imageUrl: ve.thumbBig || (og && !/16x9/.test(og.attr("content")) ? og.attr("content") : ""),
             author,
