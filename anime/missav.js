@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.0.3",
+    "version": "0.0.4",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/missav.js"
@@ -85,10 +85,257 @@ function setParam(url, key, value) {
     return url + (url.indexOf("?") >= 0 ? "&" : "?") + `${key}=${value}`;
 }
 
+let lastSiteRequest = 0;
+async function siteWait() {
+    const wait = lastSiteRequest + 300 - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    lastSiteRequest = Date.now();
+}
+
+function ymd(ms) {
+    const d = new Date(ms + 9 * 3600000).toISOString();
+    return `${d.substring(0, 4)}.${d.substring(5, 7)}.${d.substring(8, 10)}`;
+}
+
+const RULE_SIZES = [CATS.length, SORTS.length];
+const DEFAULT_POPULAR = [0, 0];
+const DEFAULT_LATEST = [0, 1];
+
+function ruleText(i) {
+    return [CATS[i[0]][0], i[1] > 0 ? SORTS[i[1]][0] : null].filter((x) => x).join(" · ");
+}
+
+const QUALITY_CHOICES = ["자동", "1080p", "720p", "480p", "360p"];
+
+// HLS 마스터 목록에 화질이 여러 개면 각각 따로 고를 수 있게 나눔. 하나뿐이거나 읽지 못하면 그대로
+// 주소에 "1080p" 같은 화질이 적혀 있으면 이름 뒤에 붙임 (mp4·단일 화질 영상도 지금 화질을 알 수 있게)
+function withRes(label, url) {
+    let path = String(url || "").split("?")[0];
+    try {
+        path = decodeURIComponent(path);
+    } catch (e) {
+        // 그대로 사용
+    }
+    const m = /(?:^|[^0-9])(2160|1440|1080|720|576|480|360|240)[pP](?![0-9a-zA-Z])/.exec(path);
+    return m && !label.includes(`${m[1]}p`) ? `${label} ${m[1]}p` : label;
+}
+
+async function hlsExpand(client, url, label, headers) {
+    const one = [{ url, originalUrl: url, quality: withRes(label, url), headers }];
+    if (!url.includes(".m3u8")) return one;
+    let body = "";
+    try {
+        const res = await client.get(url, headers);
+        if (Number(res.statusCode) >= 400) return one;
+        body = String(res.body || "").replace(/\r/g, "");
+    } catch (e) {
+        return one;
+    }
+    const seen = {};
+    const variants = [];
+    const re = /#EXT-X-STREAM-INF:([^\n]*)\n\s*([^\s#][^\n]*)/g;
+    let m;
+    while ((m = re.exec(body))) {
+        const h = /RESOLUTION=\d+x(\d+)/.exec(m[1]);
+        if (!h || seen[h[1]]) continue;
+        seen[h[1]] = true;
+        let u = m[2].trim();
+        if (!/^https?:\/\//.test(u)) {
+            u = u.startsWith("/") ? (/^(https?:\/\/[^/]+)/.exec(url) || [null, ""])[1] + u : url.replace(/[^/]*(?:\?.*)?$/, "") + u;
+        }
+        variants.push({ h: Number(h[1]), u });
+    }
+    if (variants.length === 1) return [{ url, originalUrl: url, quality: `${label} ${variants[0].h}p`, headers }];
+    if (variants.length < 2) return one;
+    variants.sort((a, b) => b.h - a.h);
+    return [{ url, originalUrl: url, quality: `${label} 자동 (최대 ${variants[0].h}p)`, headers }]
+        .concat(variants.map((v) => ({ url: v.u, originalUrl: v.u, quality: `${label} ${v.h}p`, headers })));
+}
+
+// 설정의 선호 화질을 맨 앞으로
+function qualitySort(prefKey, list) {
+    let want = "자동";
+    try {
+        const v = new SharedPreferences().get(prefKey);
+        want = QUALITY_CHOICES[Number(v)] || (QUALITY_CHOICES.includes(v) ? v : "자동");
+    } catch (e) {
+        want = "자동";
+    }
+    const hit = (x) => x.quality.endsWith(` ${want}`) || x.quality.includes(` ${want} `);
+    return list.filter(hit).concat(list.filter((x) => !hit(x)));
+}
+
+function qualityPreference(key) {
+    return {
+        key,
+        listPreference: {
+            title: "선호 화질",
+            summary: "영상이 여러 화질을 제공할 때 이 화질을 먼저 재생합니다.",
+            valueIndex: 0,
+            entries: QUALITY_CHOICES,
+            entryValues: QUALITY_CHOICES,
+        },
+    };
+}
+
+// ---------- 인기/최신 탭 규칙 (필터 조건을 탭에 저장) ----------
+const RULE_CHOICES = [
+    "저장하지 않음 (필터 결과만 보기)",
+    "현재 조건을 인기 탭에 저장",
+    "현재 조건을 최신 탭에 저장",
+    "인기 탭을 기본값으로 복원",
+    "최신 탭을 기본값으로 복원",
+    "두 탭 모두 기본값으로 복원",
+];
+const RULE_NAME = "인기/최신 탭 규칙";
+
+// 저장 값은 필터 선택 번호를 쉼표로 이은 문자열. 없거나 맞지 않으면 null (= 기본값)
+function ruleRead(prefix, popular, sizes) {
+    let raw = "";
+    try {
+        raw = new SharedPreferences().getString(`${prefix}_${popular ? "pop" : "latest"}_rule`, "") || "";
+    } catch (e) {
+        return null;
+    }
+    if (!raw) return null;
+    const idx = raw.split(",").map((x) => parseInt(x, 10));
+    if (idx.length !== sizes.length || idx.some((v, i) => !(v >= 0 && v < sizes[i]))) return null;
+    return idx;
+}
+
+function ruleApply(prefix, rule, idx) {
+    try {
+        const p = new SharedPreferences();
+        const pop = `${prefix}_pop_rule`;
+        const latest = `${prefix}_latest_rule`;
+        const v = idx.join(",");
+        if (rule === 1) p.setString(pop, v);
+        else if (rule === 2) p.setString(latest, v);
+        else if (rule === 3) p.setString(pop, "");
+        else if (rule === 4) p.setString(latest, "");
+        else if (rule === 5) {
+            p.setString(pop, "");
+            p.setString(latest, "");
+        }
+    } catch (e) {
+        // 저장 실패는 무시 (필터 결과는 그대로 보여 줌)
+    }
+}
+
+function ruleFilters(prefix, sizes, defaults, text) {
+    const pop = ruleRead(prefix, true, sizes);
+    const latest = ruleRead(prefix, false, sizes);
+    return [
+        { type_name: "SeparatorFilter" },
+        { type_name: "HeaderFilter", name: `현재 인기: ${pop ? text(pop) : defaults[0] + " (기본)"}` },
+        { type_name: "HeaderFilter", name: `현재 최신: ${latest ? text(latest) : defaults[1] + " (기본)"}` },
+        {
+            type_name: "SelectFilter", name: RULE_NAME, param: "rule", state: 0,
+            values: RULE_CHOICES.map((c, i) => ({ type_name: "SelectOption", name: c, value: String(i) })),
+        },
+    ];
+}
+
+// ---------- 앱 기본 User-Agent 사용 ----------
+// 망가요미는 내장 웹뷰에서 Cloudflare 확인을 통과하면 쿠키와 그 웹뷰의 User-Agent 를 함께 저장하고,
+// 요청에 User-Agent 가 없을 때만 그 값을 넣는다. 확장이 고정 User-Agent 를 보내면 통과 쿠키가 거부되므로
+// 사이트(문서·API) 요청에서는 확장의 User-Agent 를 빼고 앱 값을 쓰게 한다. 영상·이미지 주소 요청은 그대로 둔다.
+// 망가요미 변형 앱(Mangayomi Glitch 등)은 User-Agent 를 넣어 주지 않아, 빼고 보내면 사이트가 연결을 끊거나 403 을 줌
+// → 그런 응답이면 User-Agent 를 넣어 다시 보내고, 그 뒤로는 처음부터 넣음 (원래 망가요미는 첫 요청이 성공해 그대로)
+let APP_NO_UA = false;
+let APP_ALT = null;
+function appClient(raw) {
+    const media = /\.(?:m3u8|mp4|ts|m4s|jpe?g|png|webp|gif|avif)(?:[?#]|$)/i;
+    const fallbackUa = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
+    const strip = (url, headers) => {
+        if (!headers || media.test(String(url || ""))) return headers || {};
+        const out = {};
+        for (const k in headers) if (k.toLowerCase() !== "user-agent") out[k] = headers[k];
+        return out;
+    };
+    const withUa = (headers) => {
+        const out = Object.assign({}, headers || {});
+        if (!Object.keys(out).some((k) => k.toLowerCase() === "user-agent")) out["User-Agent"] = fallbackUa;
+        return out;
+    };
+    // 망가요미 기본 통신이 끊기면 연결을 재사용하지 않는 별도 통신으로 한 번 더 (애니24에서 효과 확인, DC 확장과 같은 방법)
+    const alt = () => {
+        if (!APP_ALT) {
+            try {
+                APP_ALT = new Client({ persistentConnection: false, noProxy: true, timeout: 25, connectTimeout: 10 });
+            } catch (e) {
+                APP_ALT = null;
+            }
+        }
+        return APP_ALT;
+    };
+    const send = async (call, url, headers) => {
+        if (APP_NO_UA || media.test(String(url || ""))) {
+            try {
+                return await call(raw, url, APP_NO_UA ? withUa(headers) : headers || {});
+            } catch (e) {
+                const c = alt();
+                if (!c) throw e;
+                return call(c, url, withUa(headers));
+            }
+        }
+        let res;
+        try {
+            res = await call(raw, url, strip(url, headers));
+        } catch (e) {
+            res = null;
+            try {
+                const again = await call(raw, url, withUa(headers));
+                APP_NO_UA = true;
+                return again;
+            } catch (e2) {
+                const c = alt();
+                if (!c) throw e;
+                try {
+                    return await call(c, url, withUa(headers));
+                } catch (e3) {
+                    throw e;
+                }
+            }
+        }
+        if (res && res.statusCode === 403) {
+            try {
+                const again = await call(raw, url, withUa(headers));
+                if (again && again.statusCode && again.statusCode < 400) {
+                    APP_NO_UA = true;
+                    return again;
+                }
+            } catch (e) {}
+        }
+        return res;
+    };
+    return {
+        get: (url, headers) => send((c, u, h) => c.get(u, h), url, headers),
+        post: (url, headers, body) => send((c, u, h) => c.post(u, h, body), url, headers),
+    };
+}
+
+
+
+// 망가요미 재생기는 재생용 주소(originalUrl) 모양으로 HLS 를 알아봄 → 확장자가 .m3u8 이 아닌 HLS 주소(.txt·jmp2 등)는
+// 끝에 "#download.m3u8" 를 붙여 알려 줌. # 뒤는 서버로 보내지지 않아 실제 요청은 그대로 (애니24에서 효과 확인)
+
+function hlsHint(list) {
+    for (const v of list || []) {
+        if (!v || !v.url) continue;
+        const plain = String(v.url).replace(/#.*$/, "");
+        const path = plain.split("?")[0];
+        // 확장자 없는 주소 중 HLS 로 보이는 것만 (mp4 등 다른 영상에 붙이면 재생이 안 됨)
+        const hlsLike = /\.txt$|\/hls\/|\/m3\/|master|playlist|jmp2\.uk\/stvp-/i.test(path);
+        if (/^https?:\/\//.test(plain) && hlsLike && !/\.(?:m3u8?|mp4|mkv|webm|mov|m4v|ts|flv|avi|mp3|aac)$/i.test(path)) v.originalUrl = plain + "#download.m3u8";
+    }
+    return list;
+}
+
 class DefaultExtension extends MProvider {
     constructor() {
         super();
-        this.client = new Client();
+        this.client = appClient(new Client());
     }
 
     pref(key) {
@@ -99,9 +346,36 @@ class DefaultExtension extends MProvider {
         }
     }
 
+    // 주소: 설정에 직접 넣은 주소 → 검색창에 붙여 넣어 바꾼 주소 → 기본 주소
     getBaseUrl() {
         const v = this.pref("missav_domain").replace(/\/+$/, "");
-        return DOMAIN_RE.test(v) ? v : DEFAULT_BASE_URL;
+        if (DOMAIN_RE.test(v)) return v;
+        let auto = "";
+        try {
+            auto = String(new SharedPreferences().getString("missav_auto_domain", "") || "").trim();
+        } catch (e) {
+            auto = "";
+        }
+        return DOMAIN_RE.test(auto) ? auto : DEFAULT_BASE_URL;
+    }
+
+    /** 검색창에 붙여 넣은 새 사이트 주소를 확인해서 적용 (MissAV 화면이거나 Cloudflare 확인 화면이면 인정) */
+    async adoptDomain(origin) {
+        if (!DOMAIN_RE.test(origin) || origin === this.getBaseUrl()) return;
+        let ok = false;
+        try {
+            const res = await this.client.get(`${origin}/ko`, { "Referer": `${origin}/` });
+            const body = String(res.body || "");
+            ok = /MISS<\/span>|MissAV/i.test(body) || /Just a moment|challenge-platform/i.test(body.substring(0, 3000));
+        } catch (e) {
+            ok = false;
+        }
+        if (!ok) throw new Error(`${origin.replace(/^https:\/\//, "")} 는 MissAV 화면이 아니에요. 주소를 다시 확인해 주세요.`);
+        try {
+            new SharedPreferences().setString("missav_auto_domain", origin);
+        } catch (e) {
+            // 저장 실패 시 이번만 그 주소로
+        }
     }
 
     listUrl() {
@@ -117,6 +391,7 @@ class DefaultExtension extends MProvider {
 
     async get(url) {
         let res;
+        await siteWait();
         try {
             res = await this.client.get(url, this.getHeaders(this.getBaseUrl()));
         } catch (e) {
@@ -126,7 +401,9 @@ class DefaultExtension extends MProvider {
         if (res.statusCode === 403 || res.statusCode === 503 || /Just a moment|cf-chl|challenge-platform/i.test(body.substring(0, 3000))) {
             throw new Error("Cloudflare 확인이 필요해요. 오른쪽 위 지구본(웹뷰)으로 사이트를 한 번 열어 확인을 통과한 뒤 다시 시도해 주세요.");
         }
-        if (res.statusCode >= 400) throw new Error(`MissAV 접속 실패 (HTTP ${res.statusCode})`);
+        if (res.statusCode >= 400) {
+            throw new Error(`MissAV 접속 실패 (HTTP ${res.statusCode}). 주소가 바뀌었으면 새 사이트 주소(예: missav.live)를 검색창에 붙여 넣어 주세요.`);
+        }
         return body;
     }
 
@@ -161,8 +438,16 @@ class DefaultExtension extends MProvider {
         return { list: out, hasNextPage: out.length > 0 && next };
     }
 
+    /** 분류·정렬 번호로 목록 주소 */
+    listByRule(idx, page) {
+        let url = idx[0] > 0 ? this.getBaseUrl() + CATS[idx[0]][1] : this.listUrl();
+        if (idx[1] > 0) url = setParam(url, "sort", SORTS[idx[1]][1]);
+        return pageUrl(url, page);
+    }
+
     async getPopular(page) {
-        return this.parseList(await this.get(pageUrl(this.listUrl(), page)), page);
+        await notesRefresh(this.client);
+        return this.parseList(await this.get(this.listByRule(ruleRead("missav", true, RULE_SIZES) || DEFAULT_POPULAR, page)), page);
     }
 
     get supportsLatest() {
@@ -170,16 +455,21 @@ class DefaultExtension extends MProvider {
     }
 
     async getLatestUpdates(page) {
-        // 같은 목록을 공개일 순으로
-        return this.parseList(await this.get(pageUrl(setParam(this.listUrl(), "sort", "published_at"), page)), page);
+        return this.parseList(await this.get(this.listByRule(ruleRead("missav", false, RULE_SIZES) || DEFAULT_LATEST, page)), page);
     }
 
     async search(query, page, filters) {
         const q = String(query || "").trim();
         const base = this.getBaseUrl();
         // 사이트 주소를 붙여 넣으면: 작품이면 그 작품, 목록이면 그 목록
+        // 사이트 주소만(https:// 없어도) 붙여 넣으면 그 주소로 바꾸고 인기 목록, 작품·목록 주소면 그 화면
+        const site = /^(?:https?:\/\/)?((?:www\.)?missav[a-z0-9]*\.[a-z]{2,6})(\/.*)?$/i.exec(q);
+        if (site) {
+            await this.adoptDomain(`https://${site[1].toLowerCase()}`);
+            if (!site[2] || /^\/(?:dm\d+\/)?(?:[a-z]{2}\/?)?$/.test(site[2])) return this.getPopular(page);
+        }
         if (/^(?:https?:\/\/)?(?:www\.)?missav[a-z0-9]*\.[a-z]{2,6}\//i.test(q)) {
-            const url = (/^https?:\/\//.test(q) ? q : "https://" + q).replace(SITE_RE, base);
+            const url = (/^https?:\/\//.test(q) ? q : "https://" + q).replace(SITE_RE, this.getBaseUrl());
             if (POST_RE.test(url)) {
                 if (page > 1) return { list: [], hasNextPage: false };
                 const d = await this.getDetail(url);
@@ -187,15 +477,21 @@ class DefaultExtension extends MProvider {
             }
             return this.parseList(await this.get(pageUrl(url, page)), page);
         }
-        let sort = "";
-        let cat = "";
+        const idx = [0, 0];
+        let rule = 0;
         for (const f of filters || []) {
-            if (f && f.name === "정렬") sort = (SORTS[Number(f.state) || 0] || SORTS[0])[1];
-            if (f && f.name === "분류") cat = (CATS[Number(f.state) || 0] || CATS[0])[1];
+            if (!f) continue;
+            if (f.name === "분류") idx[0] = Math.min(Math.max(Number(f.state) || 0, 0), CATS.length - 1);
+            if (f.name === "정렬") idx[1] = Math.min(Math.max(Number(f.state) || 0, 0), SORTS.length - 1);
+            if (f.name === RULE_NAME) rule = Number(f.state) || 0;
         }
-        let url = q ? `${base}/ko/search/${encodeURIComponent(q)}` : cat ? base + cat : this.listUrl();
-        if (sort) url = setParam(url, "sort", sort);
-        return this.parseList(await this.get(pageUrl(url, page)), page);
+        if (q) {
+            let url = `${base}/ko/search/${encodeURIComponent(q)}`;
+            if (idx[1] > 0) url = setParam(url, "sort", SORTS[idx[1]][1]);
+            return this.parseList(await this.get(pageUrl(url, page)), page);
+        }
+        if (rule) ruleApply("missav", rule, idx);
+        return this.parseList(await this.get(this.listByRule(idx, page)), page);
     }
 
     async getDetail(url) {
@@ -213,10 +509,19 @@ class DefaultExtension extends MProvider {
             const t = String(a.text || "").trim();
             if (t && t.length < 40 && genre.indexOf(t) < 0) genre.push(t);
         }
-        const description = meta("og:description") || meta("description");
+        // 출시일: time[datetime] 또는 "출시일/발매일/Release date" 옆의 yyyy-MM-dd
+        let date = "";
+        const t = first(doc, "time[datetime]");
+        if (t) date = (/(\d{4}-\d{2}-\d{2})/.exec(String(t.attr("datetime") || "")) || [])[1] || "";
+        if (!date) date = (/(?:출시일|발매일|Release date)[^0-9]{0,80}(\d{4}-\d{2}-\d{2})/i.exec(html) || [])[1] || "";
+        const m = /(\d{4})-(\d{2})-(\d{2})/.exec(date);
+        const ms = m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) - 9 * 3600000 : 0;
+        const desc = meta("og:description") || meta("description");
         return {
-            name, imageUrl, description, genre, status: 1, link: url,
-            episodes: [{ name: "1 재생", url, dateUpload: String(Date.now()) }],
+            name: ms && name && !/\(\d{4}\)$/.test(name) ? `${name} (${m[1]})` : name,
+            imageUrl, genre, status: 1, link: url,
+            description: (ms ? `출시일: ${ymd(ms)}\n\n` : "") + desc,
+            episodes: [{ name: ms ? `1 재생 (${ymd(ms)})` : "1 재생", url, dateUpload: String(ms || Date.now()) }],
         };
     }
 
@@ -248,23 +553,26 @@ class DefaultExtension extends MProvider {
         const list = (info.list || []).filter((u) => /^https?:\/\//.test(u));
         // 주 목록(playlist.m3u8) 먼저, 화질별 목록은 이름에 화질
         list.sort((a, b) => (/playlist\.m3u8/.test(b) ? 1 : 0) - (/playlist\.m3u8/.test(a) ? 1 : 0));
-        const out = list.map((u) => {
-            const res = (/(\d{3,4})p/.exec(u) || /\/(\d{3,4})x(\d{3,4})\//.exec(u) || [])[1];
-            const label = /playlist\.m3u8/.test(u) ? "자동" : res ? `${res}p` : "영상";
-            return { url: u, originalUrl: u, quality: `MissAV ${label}`, headers };
-        });
+        // 주 목록은 화질별로 나눔(자동 (최대 Np) + 1080p·720p…), 그 밖의 주소는 이름에 화질
+        let out = [];
+        const main = list.filter((u) => /playlist\.m3u8/.test(u))[0];
+        if (main) out = await hlsExpand(this.client, main, "MissAV", headers);
+        for (const u of list) {
+            if (u === main || out.some((v) => v.url === u)) continue;
+            out.push({ url: u, originalUrl: u, quality: withRes("MissAV", u), headers });
+        }
         if (!out.length) {
             const host = (u) => String(u || "").replace(/^https?:\/\//, "").split(/[/?#]/)[0];
             throw new Error(`영상 주소를 못 찾았어요 [video ${info.videos}개 · iframe ${(info.frames || []).map(host).join(",").substring(0, 80) || "없음"} · ${info.text || ""}]`);
         }
-        return out;
+        return hlsHint(qualitySort("missav_quality", out));
     }
 
     getFilterList() {
         return [
             { type_name: "HeaderFilter", name: `📡 주소: ${this.getBaseUrl().replace(/^https?:\/\//, "")}` },
-            { type_name: "HeaderFilter", name: "인기 = 설정의 목록 주소, 최신 = 같은 목록 공개일 순" },
-            { type_name: "HeaderFilter", name: "검색창에 사이트 목록·작품 주소를 붙여 넣으면 그 화면을 바로 열어요" },
+            ...notesFilters("missav"),
+            { type_name: "HeaderFilter", name: "검색창에 사이트 주소를 붙여 넣으면 그 주소로 바꾸고, 작품·목록 주소면 그 화면을 열어요" },
             { type_name: "SeparatorFilter" },
             { type_name: "HeaderFilter", name: "분류: 검색어가 없을 때 적용 · 정렬: 검색 결과·분류 모두 적용" },
             {
@@ -275,15 +583,15 @@ class DefaultExtension extends MProvider {
                 type_name: "SelectFilter", name: "정렬", state: 0,
                 values: SORTS.map((x, i) => ({ type_name: "SelectOption", name: x[0], value: String(i) })),
             },
-        ];
+        ].concat(ruleFilters("missav", RULE_SIZES, [ruleText(DEFAULT_POPULAR), ruleText(DEFAULT_LATEST)], ruleText));
     }
 
     getSourcePreferences() {
         return [{
             key: "missav_list",
             editTextPreference: {
-                title: "인기·최신 목록 주소",
-                summary: "비워 두면 기본 목록(dm270/ko)을 사용합니다.",
+                title: "기본 목록 주소 (분류 \"설정의 목록\")",
+                summary: "비워 두면 첫 화면(dm270/ko). 인기·최신 탭은 필터의 탭 규칙으로 바꿀 수 있어요.",
                 value: "",
                 dialogTitle: "목록 주소",
                 dialogMessage: "사이트의 목록 화면 주소 (예: https://missav123.com/dm270/ko)",
@@ -295,8 +603,42 @@ class DefaultExtension extends MProvider {
                 summary: "비워 두면 https://missav123.com 을 사용합니다.",
                 value: "",
                 dialogTitle: "사이트 주소",
-                dialogMessage: "https:// 로 시작하는 주소 (주소가 바뀌면 여기에)",
+                dialogMessage: "https:// 로 시작하는 주소 (주소가 바뀌면 여기에, 또는 검색창에 붙여 넣기)",
             },
-        }];
+        }, qualityPreference("missav_quality")];
     }
+}
+
+// ---------- 업데이트 내역 (필터 맨 위 📝 줄) ----------
+// 저장소의 changelog.json 을 1시간에 한 번 받아 두었다가 그 소스의 최근 3개를 보여 줌 (필터 화면을 열 때 기다리지 않음)
+const NOTES_URL = "https://raw.githubusercontent.com/insid0909-max/my-ext/main/changelog.json";
+
+async function notesRefresh(client) {
+    let p;
+    try {
+        p = new SharedPreferences();
+    } catch (e) {
+        return;
+    }
+    const last = Number(p.getString("notes_at", "0")) || 0;
+    if (Date.now() - last < 60 * 60000) return;
+    p.setString("notes_at", String(Date.now()));
+    try {
+        const r = await client.get(NOTES_URL, {});
+        const body = String(r.body || "");
+        if (r.statusCode === 200 && body.trim().startsWith("{")) p.setString("notes_json", body);
+    } catch (e) {
+        // 다음 기회에 다시 받음
+    }
+}
+
+function notesFilters(key) {
+    let list = [];
+    try {
+        list = (JSON.parse(new SharedPreferences().getString("notes_json", "") || "{}").items || {})[key] || [];
+    } catch (e) {
+        list = [];
+    }
+    return list.filter((n) => n && n.t).slice(0, 3)
+        .map((n) => ({ type_name: "HeaderFilter", name: `📝 ${String(n.d || "").substring(5).replace("-", ".")} ${n.t}`, _status: true }));
 }
