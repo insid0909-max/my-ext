@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.0.2",
+    "version": "0.0.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/supjav.js"
@@ -82,14 +82,16 @@ class DefaultExtension extends MProvider {
         return v.replace(/^https?:\/\/(?:www\.)?supjav\.[a-z]{2,6}/, this.getBaseUrl());
     }
 
+    // 설치할 때 앱이 getHeaders 를 부르는데, 이때 설정을 읽으면 설치가 조용히 멈춤(망가요미 #1064) → 설정 읽지 않음
     getHeaders(url) {
-        return { "Referer": `${this.getBaseUrl()}/` };
+        const origin = (/^https?:\/\/[^/]+/.exec(String(url || "")) || [DEFAULT_BASE_URL])[0];
+        return { "Referer": `${origin}/` };
     }
 
     async get(url) {
         let res;
         try {
-            res = await this.client.get(url, this.getHeaders());
+            res = await this.client.get(url, this.getHeaders(this.getBaseUrl()));
         } catch (e) {
             throw new Error(`SupJav 접속 실패: ${String((e && e.message) || e).substring(0, 80)}`);
         }
