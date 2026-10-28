@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.0.5",
+    "version": "0.0.6",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/supjav.js"
@@ -206,7 +206,7 @@ class DefaultExtension extends MProvider {
             "function done(){window.flutter_inappwebview.callHandler('setResponse',JSON.stringify({list:out,buttons:names,frames:frames()}));}" +
             "function step(){if(i>=b.length||i>=10){done();return;}" +
             "var btn=b[i++];var nm=(btn.textContent||'').trim().substring(0,20)||('서버'+i);names.push(nm);try{btn.click();}catch(e){}" +
-            "var n=0;var t=setInterval(function(){n++;var s=pick();if(s||n>15){clearInterval(t);" +
+            "var n=0;var t=setInterval(function(){n++;var s=pick();if(s&&!good.test(s)&&n<=15)s='';if(s||n>15){clearInterval(t);" +
             "if(s){seen[s]=1;out.push({name:nm,src:s});}step();}},200);}" +
             "setTimeout(step,500);})();";
         let info = null;
@@ -224,14 +224,20 @@ class DefaultExtension extends MProvider {
         return { list, diag };
     }
 
-    /** 재생 화면을 웹뷰로 열어 최종 주소와 플레이어가 불러온 영상 주소를 받음 */
-    async playFrame(server, pageUrl) {
+    /** 재생 화면을 웹뷰로 열어 최종 주소와 플레이어가 불러온 영상 주소를 받음.
+     *  영상이 없고 안쪽에 또 재생 화면(iframe)이 있으면 그 화면을 한 번 더 열어 봄 (supremejav → 실제 영상 서버) */
+    async playFrame(server, pageUrl, depth) {
+        depth = depth || 0;
         const script = "(function(){var n=0;function find(){var r=performance.getEntriesByType('resource');" +
             "for(var i=0;i<r.length;i++){if(/\\.m3u8(\\?|$)/.test(r[i].name))return r[i].name;}" +
-            "var v=document.querySelector('video');var s=v&&(v.currentSrc||v.src);if(s&&/^https?:/.test(s))return s;" +
+            "var v=document.querySelector('video');var s=v&&(v.currentSrc||v.src||v.getAttribute('src'));if(s&&/^https?:/.test(s))return s;" +
+            "var so=document.querySelector('video source[src]');if(so&&/^https?:/.test(so.src))return so.src;" +
             "for(var j=0;j<r.length;j++){if(/\\.mp4(\\?|$)/.test(r[j].name))return r[j].name;}return '';}" +
-            "var t=setInterval(function(){n++;var u=find();if(u||n>=40){clearInterval(t);" +
-            "window.flutter_inappwebview.callHandler('setResponse',JSON.stringify({href:location.href,media:u}));return;}" +
+            "function frames(){var r=[],f=document.querySelectorAll('iframe');for(var i=0;i<f.length;i++){var s=f[i].src||f[i].getAttribute('data-src')||'';" +
+            "if(/^https?:/.test(s))r.push(s);}return r;}" +
+            "function send(u){window.flutter_inappwebview.callHandler('setResponse',JSON.stringify({href:location.href,media:u,frames:frames()," +
+            "text:((document.title||'')+' | '+((document.body&&document.body.innerText)||'')).replace(/\\s+/g,' ').substring(0,80)}));}" +
+            "var t=setInterval(function(){n++;var u=find();if(u||n>=40||(n>=10&&!document.querySelector('video')&&frames().length)){clearInterval(t);send(u);return;}" +
             "if(n===8||n===20){var v=document.querySelector('video');if(v){v.muted=true;try{v.play();}catch(e){}}" +
             "var b=document.querySelector('.jw-icon-display,.vjs-big-play-button,.plyr__control--overlaid,.play-button,#play');if(b)b.click();}},300);})();";
         let info = null;
@@ -242,21 +248,34 @@ class DefaultExtension extends MProvider {
         } catch (e) {
             info = null;
         }
+        const hostOf = (u) => String(u || "").replace(/^https?:\/\//, "").split(/[/?#]/)[0];
         const href = info && /^https?:\/\//.test(info.href || "") ? info.href : server.src;
         const origin = (/^https?:\/\/[^/]+/.exec(href) || [""])[0];
-        const host = origin.replace(/^https?:\/\//, "");
-        const label = `${server.name} · ${host}`;
+        const host = hostOf(origin);
         const videos = [];
         if (info && /^https?:\/\//.test(info.media || "")) {
             const headers = { "Referer": origin + "/", "Origin": origin };
-            videos.push({ url: info.media, originalUrl: info.media, quality: label, headers });
+            videos.push({ url: info.media, originalUrl: info.media, quality: `${server.name} · ${host}`, headers });
         }
-        if (!videos.length) {
-            const ext = await this.builtIn(href, server.name);
-            videos.push(...ext);
+        if (!videos.length) videos.push(...await this.builtIn(href, server.name));
+        const from = hostOf(server.src);
+        if (!videos.length && info && depth < 2) {
+            // 안쪽 재생 화면: 알려진 영상 서버 이름이 있는 것 먼저, 광고처럼 보이는 것은 뒤로
+            const inner = (info.frames || []).filter((f) => hostOf(f) !== host);
+            const known = /tape|voe|dood|ds2play|turbo|wish|filemoon|mixdrop|vidhide|streamhg|fst|emturbo|mp4upload|player|embed/i;
+            inner.sort((x, y) => (known.test(y) ? 1 : 0) - (known.test(x) ? 1 : 0));
+            const whys = [];
+            for (const f of inner.slice(0, 2)) {
+                videos.push(...await this.builtIn(f, server.name));
+                if (videos.length) break;
+                const got = await this.playFrame({ name: server.name, src: f }, href, depth + 1);
+                if (got.videos.length) return got;
+                whys.push(got.why);
+            }
+            if (!videos.length && whys.length) return { videos: [], why: `${from}→${whys.join(" , ")}` };
         }
-        const from = String(server.src).replace(/^https?:\/\//, "").split(/[/?#]/)[0];
-        return { videos, why: info ? `${from}→${host} 영상 없음` : `${from} 웹뷰 응답 없음` };
+        const more = info ? ` (${(info.frames || []).map(hostOf).join(",").substring(0, 50) || "iframe 없음"} · ${String(info.text || "").substring(0, 40)})` : "";
+        return { videos, why: info ? `${from}→${host} 영상 없음${more}` : `${from} 웹뷰 응답 없음` };
     }
 
     /** 앱에 들어 있는 재생 서버 추출기 (있는 것만) */
