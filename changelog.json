@@ -1,7 +1,8 @@
 {
   "names": {
     "missav": "MissAV",
-    "xhamster": "xHamster"
+    "xhamster": "xHamster",
+    "avflix": "AVFLIX"
   },
   "items": {
     "missav": [
@@ -30,6 +31,12 @@
       {
         "d": "2026-10-28",
         "t": "첫 버전 (카테고리 388개·정렬·화질 H.264/AV1)"
+      }
+    ],
+    "avflix": [
+      {
+        "d": "2026-10-29",
+        "t": "첫 버전 (분류 9개·정렬 3개·mp4 재생)"
       }
     ]
   }
