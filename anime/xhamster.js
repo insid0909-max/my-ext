@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.0.4",
+    "version": "0.0.5",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/xhamster.js"
@@ -597,8 +597,9 @@ class DefaultExtension extends MProvider {
         const tm = { 화면: 0, 웹뷰: 0, 화질: 0 };
         const mark = (k, t) => { tm[k] += (Date.now() - t) / 1000; };
         const done = (list) => {
-            const txt = ` ⏱ 화면 ${tm.화면.toFixed(1)}·웹뷰 ${tm.웹뷰.toFixed(1)}·화질 ${tm.화질.toFixed(1)}·합계 ${((Date.now() - t0) / 1000).toFixed(1)}`;
-            return list.map((v) => Object.assign({}, v, { quality: v.quality + txt }));
+            // 이름이 길어 잘리므로 맨 앞에 짧게: ⏱화면+웹뷰+화질=합계
+            const txt = `⏱${tm.화면.toFixed(1)}+${tm.웹뷰.toFixed(1)}+${tm.화질.toFixed(1)}=${((Date.now() - t0) / 1000).toFixed(1)} `;
+            return list.map((v) => Object.assign({}, v, { quality: txt + v.quality }));
         };
         return done(await this.videoListInner(url, tm, mark));
     }
