@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.0.2",
+    "version": "0.0.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/xhamster.js"
@@ -593,6 +593,21 @@ class DefaultExtension extends MProvider {
     // ================= 재생 =================
     async getVideoList(url) {
         url = url.split("#")[0];
+        const origin0 = (/^https?:\/\/[^/]+/.exec(url) || [this.getBaseUrl()])[0];
+        // 직접 받은 화면에 영상 주소가 없었으면(앱 통신엔 주소가 빠진 화면이 오기도 함) 6시간 동안 웹뷰부터 (2026-11-04, 재생 10초 → 단축)
+        let skipUntil = 0;
+        try {
+            skipUntil = Number(new SharedPreferences().getString("xh_direct_fail_until", "0")) || 0;
+        } catch (e) {
+            skipUntil = 0;
+        }
+        if (Date.now() < skipUntil) {
+            const wv = await this.viaWebview(url);
+            if (wv) {
+                const list = await this.fromHls(wv, { "Referer": `${origin0}/`, "Origin": origin0 }, " (웹뷰)");
+                if (list.length) return hlsHint(qualitySort("xh_quality", list));
+            }
+        }
         const html = await this.get(url);
         const origin = (/^https?:\/\/[^/]+/.exec(url) || [this.getBaseUrl()])[0];
         const headers = { "Referer": `${origin}/`, "Origin": origin };
@@ -601,35 +616,60 @@ class DefaultExtension extends MProvider {
         const pre = (/<link[^>]+rel="preload"[^>]+href="(https:[^"]+\.m3u8[^"]*)"/.exec(html) || [])[1];
         const mp4 = (/<video[^>]+src="(https:[^"]+\.mp4[^"]*)"/.exec(html) || [])[1];
         const out = [];
-        if (pre) {
-            const av1 = unesc(pre);
-            // 같은 주소의 H.264 판 (AV1 을 못 트는 휴대폰용). 열리는 것만
-            const h264 = av1.replace(/\.av1\.mp4\.m3u8/, ".h264.mp4.m3u8");
-            if (h264 !== av1 && await mediaWorks(this.client, h264, headers)) {
-                // H.264: 자동 + 화질별 (144p 는 뺌)
-                out.push(...(await hlsExpand(this.client, h264, `${LABEL} H.264`, headers)).filter((v) => !/ 144p$/.test(v.quality)));
-            }
-            // AV1: 더 작은 용량, 휴대폰에 따라 못 틀 수 있어 "자동" 하나만 (H.264 가 없으면 화질별도)
-            const a = await hlsExpand(this.client, av1, /\.av1\./.test(av1) ? `${LABEL} AV1` : LABEL, headers);
-            out.push(...(out.length ? a.slice(0, 1) : a.filter((v) => !/ 144p$/.test(v.quality))));
-        }
+        if (pre) out.push(...await this.fromHls(unesc(pre), headers));
         if (mp4) out.push({ url: unesc(mp4), originalUrl: unesc(mp4), quality: withRes(`${LABEL} 기본`, mp4), headers });
         if (!out.length) {
-            const wv = await this.viaWebview(url);
-            if (wv) out.push(...await hlsExpand(this.client, wv, `${LABEL} (웹뷰)`, headers));
+            try {
+                new SharedPreferences().setString("xh_direct_fail_until", String(Date.now() + 6 * 3600000));
+            } catch (e) {
+                // 그대로
+            }
+            const wv = Date.now() < skipUntil ? null : await this.viaWebview(url);
+            if (wv) out.push(...await this.fromHls(wv, headers, " (웹뷰)"));
+        } else if (skipUntil) {
+            try {
+                new SharedPreferences().setString("xh_direct_fail_until", "0");
+            } catch (e) {
+                // 그대로
+            }
         }
         if (!out.length) throw new Error("영상 주소를 못 찾았어요 [화면에 영상 주소 없음 · 웹뷰에서도 못 찾음]");
         return hlsHint(qualitySort("xh_quality", out));
     }
 
+    /** 화질 묶음 목록(m3u8) → H.264(열리면 자동+화질별) + AV1, 144p 는 뺌 */
+    async fromHls(av1, headers, tag = "") {
+        const out = [];
+        if (!/\.m3u8/.test(av1)) return [{ url: av1, originalUrl: av1, quality: withRes(LABEL + tag, av1), headers }];
+        {
+            // 같은 주소의 H.264 판 (AV1 을 못 트는 휴대폰용). 열리는 것만
+            const h264 = av1.replace(/\.av1\.mp4\.m3u8/, ".h264.mp4.m3u8");
+            // H.264 확인과 AV1 목록을 동시에 받음 (차례로 받으면 그만큼 늦음)
+            const [h264ok, a] = await Promise.all([
+                h264 !== av1 ? mediaWorks(this.client, h264, headers) : Promise.resolve(false),
+                hlsExpand(this.client, av1, /\.av1\./.test(av1) ? `${LABEL}${tag} AV1` : LABEL + tag, headers),
+            ]);
+            if (h264ok) {
+                // H.264: 자동 + 화질별 (144p 는 뺌)
+                out.push(...(await hlsExpand(this.client, h264, `${LABEL}${tag} H.264`, headers)).filter((v) => !/ 144p$/.test(v.quality)));
+            }
+            // AV1: 더 작은 용량, 휴대폰에 따라 못 틀 수 있어 "자동" 하나만 (H.264 가 없으면 화질별도)
+            out.push(...(out.length ? a.slice(0, 1) : a.filter((v) => !/ 144p$/.test(v.quality))));
+        }
+        return out;
+    }
+
     /** 화면에 주소가 없을 때: 웹뷰로 열어 플레이어가 불러온 m3u8 */
     async viaWebview(url) {
         if (typeof evaluateJavascriptViaWebview !== "function") return null;
-        const script = "(function(){var n=0;var t=setInterval(function(){n++;var r=performance.getEntriesByType('resource');" +
-            "for(var i=0;i<r.length;i++){if(/\\.m3u8(\\?|$)/.test(r[i].name)){clearInterval(t);" +
-            "window.flutter_inappwebview.callHandler('setResponse',r[i].name);return;}}" +
-            "if(n===8||n===20){var v=document.querySelector('video');if(v){v.muted=true;try{v.play();}catch(e){}}}" +
-            "if(n>=50){clearInterval(t);window.flutter_inappwebview.callHandler('setResponse','');}},300);})();";
+        // 화면에 이미 적힌 화질 묶음 주소(head 의 preload)를 먼저 읽고, 없으면 플레이어가 불러온 m3u8 (2026-11-04: 전엔 플레이어만 기다려 느렸음)
+        const script = "(function(){var n=0,done=false;function send(u){if(done)return;done=true;clearInterval(t);" +
+            "window.flutter_inappwebview.callHandler('setResponse',u);}" +
+            "function pick(){var l=document.querySelector('link[rel=preload][href*=\".m3u8\"]');if(l&&l.href)return l.href;" +
+            "var r=performance.getEntriesByType('resource');for(var i=0;i<r.length;i++){if(/\\.m3u8(\\?|$)/.test(r[i].name))return r[i].name;}return '';}" +
+            "var t=setInterval(function(){n++;var u=pick();if(u){send(u);return;}" +
+            "if(n===2||n===15){var v=document.querySelector('video');if(v){v.muted=true;try{v.play();}catch(e){}}}" +
+            "if(n>=75)send('');},200);var u0=pick();if(u0)send(u0);})();";
         try {
             const timeout = new Promise((r) => setTimeout(() => r(null), 20000));
             const res = await Promise.race([evaluateJavascriptViaWebview(url, { "Referer": `${this.getBaseUrl()}/` }, [script]), timeout]);
