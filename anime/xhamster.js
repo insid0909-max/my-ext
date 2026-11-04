@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.0.5",
+    "version": "0.0.6",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/xhamster.js"
@@ -591,20 +591,7 @@ class DefaultExtension extends MProvider {
     }
 
     // ================= 재생 =================
-    // [임시 측정] 재생 시작 단계별 시간을 화질 이름 뒤에 (2026-11-04, 원인 찾으면 반드시 뺄 것)
     async getVideoList(url) {
-        const t0 = Date.now();
-        const tm = { 화면: 0, 웹뷰: 0, 화질: 0 };
-        const mark = (k, t) => { tm[k] += (Date.now() - t) / 1000; };
-        const done = (list) => {
-            // 이름이 길어 잘리므로 맨 앞에 짧게: ⏱화면+웹뷰+화질=합계
-            const txt = `⏱${tm.화면.toFixed(1)}+${tm.웹뷰.toFixed(1)}+${tm.화질.toFixed(1)}=${((Date.now() - t0) / 1000).toFixed(1)} `;
-            return list.map((v) => Object.assign({}, v, { quality: txt + v.quality }));
-        };
-        return done(await this.videoListInner(url, tm, mark));
-    }
-
-    async videoListInner(url, tm, mark) {
         url = url.split("#")[0];
         const origin0 = (/^https?:\/\/[^/]+/.exec(url) || [this.getBaseUrl()])[0];
         // 직접 받은 화면에 영상 주소가 없었으면(앱 통신엔 주소가 빠진 화면이 오기도 함) 6시간 동안 웹뷰부터 (2026-11-04, 재생 10초 → 단축)
@@ -615,19 +602,13 @@ class DefaultExtension extends MProvider {
             skipUntil = 0;
         }
         if (Date.now() < skipUntil) {
-            let t = Date.now();
             const wv = await this.viaWebview(url);
-            mark("웹뷰", t);
             if (wv) {
-                t = Date.now();
                 const list = await this.fromHls(wv, { "Referer": `${origin0}/`, "Origin": origin0 }, " (웹뷰)");
-                mark("화질", t);
                 if (list.length) return hlsHint(qualitySort("xh_quality", list));
             }
         }
-        let t1 = Date.now();
         const html = await this.get(url);
-        mark("화면", t1);
         const origin = (/^https?:\/\/[^/]+/.exec(url) || [this.getBaseUrl()])[0];
         const headers = { "Referer": `${origin}/`, "Origin": origin };
         const unesc = (s) => String(s || "").replace(/&amp;/g, "&").replace(/\\\//g, "/");
@@ -635,9 +616,7 @@ class DefaultExtension extends MProvider {
         const pre = (/<link[^>]+rel="preload"[^>]+href="(https:[^"]+\.m3u8[^"]*)"/.exec(html) || [])[1];
         const mp4 = (/<video[^>]+src="(https:[^"]+\.mp4[^"]*)"/.exec(html) || [])[1];
         const out = [];
-        t1 = Date.now();
         if (pre) out.push(...await this.fromHls(unesc(pre), headers));
-        mark("화질", t1);
         if (mp4) out.push({ url: unesc(mp4), originalUrl: unesc(mp4), quality: withRes(`${LABEL} 기본`, mp4), headers });
         if (!out.length) {
             try {
@@ -645,13 +624,9 @@ class DefaultExtension extends MProvider {
             } catch (e) {
                 // 그대로
             }
-            t1 = Date.now();
-            const wv = Date.now() < skipUntil ? null : await this.viaWebview(url);
-            mark("웹뷰", t1);
-            t1 = Date.now();
-            if (wv) out.push(...await this.fromHls(wv, headers, " (웹뷰)"));
-            mark("화질", t1);
-        } else if (skipUntil) {
+                const wv = Date.now() < skipUntil ? null : await this.viaWebview(url);
+                if (wv) out.push(...await this.fromHls(wv, headers, " (웹뷰)"));
+            } else if (skipUntil) {
             try {
                 new SharedPreferences().setString("xh_direct_fail_until", "0");
             } catch (e) {
@@ -669,14 +644,15 @@ class DefaultExtension extends MProvider {
         {
             // 같은 주소의 H.264 판 (AV1 을 못 트는 휴대폰용). 열리는 것만
             const h264 = av1.replace(/\.av1\.mp4\.m3u8/, ".h264.mp4.m3u8");
-            // H.264 확인과 AV1 목록을 동시에 받음 (차례로 받으면 그만큼 늦음)
-            const [h264ok, a] = await Promise.all([
-                h264 !== av1 ? mediaWorks(this.client, h264, headers) : Promise.resolve(false),
+            // H.264 목록과 AV1 목록을 한 번에 동시에 받음 (2026-11-04 측정: 화질 단계 1.1초 → 확인·목록을 따로 받지 않게)
+            // H.264 는 화질이 나뉜 목록을 받았을 때만 씀 (못 받으면 hlsExpand 가 원래 주소 하나만 돌려줌)
+            const [hs, a] = await Promise.all([
+                h264 !== av1 ? hlsExpand(this.client, h264, `${LABEL}${tag} H.264`, headers) : Promise.resolve([]),
                 hlsExpand(this.client, av1, /\.av1\./.test(av1) ? `${LABEL}${tag} AV1` : LABEL + tag, headers),
             ]);
-            if (h264ok) {
+            if (hs.length > 1) {
                 // H.264: 자동 + 화질별 (144p 는 뺌)
-                out.push(...(await hlsExpand(this.client, h264, `${LABEL}${tag} H.264`, headers)).filter((v) => !/ 144p$/.test(v.quality)));
+                out.push(...hs.filter((v) => !/ 144p$/.test(v.quality)));
             }
             // AV1: 더 작은 용량, 휴대폰에 따라 못 틀 수 있어 "자동" 하나만 (H.264 가 없으면 화질별도)
             out.push(...(out.length ? a.slice(0, 1) : a.filter((v) => !/ 144p$/.test(v.quality))));
