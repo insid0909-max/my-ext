@@ -66,28 +66,6 @@
     "notes": ""
   },
   {
-    "name": "티비위키",
-    "id": 1720450905,
-    "baseUrl": "https://tvwiki57.net",
-    "lang": "ko",
-    "typeSource": "single",
-    "iconUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/icon.png",
-    "dateFormat": "",
-    "dateFormatLocale": "",
-    "isNsfw": false,
-    "hasCloudflare": false,
-    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvwiki.js?v=1.0.7",
-    "apiUrl": "",
-    "version": "1.0.7",
-    "isManga": false,
-    "itemType": 1,
-    "isFullData": false,
-    "appMinVerReq": "0.5.0",
-    "additionalParams": "",
-    "sourceCodeLanguage": 1,
-    "notes": ""
-  },
-  {
     "name": "티비룸",
     "id": 1230463291,
     "baseUrl": "https://tvroom46.org",

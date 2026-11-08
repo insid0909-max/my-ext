@@ -2,9 +2,6 @@
   "domains": {
     "tvroom": {
       "baseUrl": "https://tvroom46.org"
-    },
-    "tvwiki": {
-      "baseUrl": "https://tvwiki57.net"
     }
   }
 }
