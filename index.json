@@ -98,15 +98,15 @@
     "dateFormatLocale": "",
     "isNsfw": false,
     "hasCloudflare": false,
-    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.6",
+    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.7",
     "apiUrl": "",
-    "version": "0.0.6",
+    "version": "0.0.7",
     "isManga": false,
     "itemType": 1,
     "isFullData": false,
     "appMinVerReq": "0.5.0",
     "additionalParams": "",
     "sourceCodeLanguage": 1,
-    "notes": "진단 전용: 동일 로컬 프록시의 키·초기화·첫 영상조각 최대 각 1건 응답 확인 후 직접 결과창 표시·재생 중단. 영상은 1024바이트 Range 요청이나 서버가 무시하면 전체 조각을 받을 수 있음. 선언길이는 실수신 바이트 수가 아님. 키·주소·본문 기록 안함. 기존 티비룸·키 처리 유지."
+    "notes": "진단 전용: iframe 플레이어 HTML의 캐스트·키 처리 문자열과 제한된 스크립트 참조만 직접 결과창 표시. 키·영상·캐스트 API 요청 안함. 외부 JS 미조회·미실행. 전체 경로·토큰·쿠키·본문 비표시. 재생 의도적 중단. 기존 티비룸 변경 없음."
   }
 ]
