@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.1.2",
+    "version": "0.1.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/aniya24.js"
@@ -501,18 +501,18 @@ class DefaultExtension extends MProvider {
     async listPage(idx, page) {
         const t0 = Date.now();
         const path = this.listPath(idx, page);
-        let timer;
-        const late = new Promise((_, no) => { timer = setTimeout(() => no(new Error(`${LABEL} 사이트 응답이 30초 넘게 없어요. 잠시 뒤 다시, 또는 웹뷰로 사이트를 한 번 열었다 와 주세요 [${path.substring(0, 60)}]`)), 30000); });
-        try {
-            const html = await Promise.race([this.get(path, true), late]);
+        // 망가요미에는 clearTimeout 이 없음 → 늦음 표시는 값으로 돌려받아 판단
+        const LATE = {};
+        const late = new Promise((r) => setTimeout(() => r(LATE), 30000));
+        const html = await Promise.race([this.get(path, true), late]);
+        if (html === LATE) throw new Error(`${LABEL} 사이트 응답이 30초 넘게 없어요. 잠시 뒤 다시, 또는 웹뷰로 사이트를 한 번 열었다 와 주세요 [${path.substring(0, 60)}]`);
+        {
             const r = this.parseCards(html, page);
             if (!r.list.length && page === 1 && html) {
                 const t = (/<title>([^<]{0,40})/i.exec(html) || [null, ""])[1];
                 throw new Error(`${LABEL} 목록이 비어 있어요 [${((Date.now() - t0) / 1000).toFixed(1)}초 · ${html.length}자 · ${t}]`);
             }
             return r;
-        } finally {
-            clearTimeout(timer);
         }
     }
 
