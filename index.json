@@ -98,15 +98,15 @@
     "dateFormatLocale": "",
     "isNsfw": false,
     "hasCloudflare": false,
-    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.4",
+    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.5",
     "apiUrl": "",
-    "version": "0.0.4",
+    "version": "0.0.5",
     "isManga": false,
     "itemType": 1,
     "isFullData": false,
     "appMinVerReq": "0.5.0",
     "additionalParams": "",
     "sourceCodeLanguage": 1,
-    "notes": "로컬 프록시 별도 GET 사전검사: HTTP 상태·EXTM3U 여부만 기록. 실제 플레이어·영상조각·키 수신 미검사. 원래 주소 반환과 키 처리 유지."
+    "notes": "진단 전용: 회차 실행 시 로컬 프록시 사전검사 결과를 오류창에 직접 표시하고 재생을 의도적으로 중단합니다. 플레이어·영상조각·키 수신 미검사. 기존 티비룸과 키 처리 유지."
   }
 ]
