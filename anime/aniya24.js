@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.1.1",
+    "version": "0.1.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/aniya24.js"
@@ -499,11 +499,26 @@ class DefaultExtension extends MProvider {
     }
 
     async listPage(idx, page) {
-        return this.parseCards(await this.get(this.listPath(idx, page), true), page);
+        const t0 = Date.now();
+        const path = this.listPath(idx, page);
+        let timer;
+        const late = new Promise((_, no) => { timer = setTimeout(() => no(new Error(`${LABEL} 사이트 응답이 30초 넘게 없어요. 잠시 뒤 다시, 또는 웹뷰로 사이트를 한 번 열었다 와 주세요 [${path.substring(0, 60)}]`)), 30000); });
+        try {
+            const html = await Promise.race([this.get(path, true), late]);
+            const r = this.parseCards(html, page);
+            if (!r.list.length && page === 1 && html) {
+                const t = (/<title>([^<]{0,40})/i.exec(html) || [null, ""])[1];
+                throw new Error(`${LABEL} 목록이 비어 있어요 [${((Date.now() - t0) / 1000).toFixed(1)}초 · ${html.length}자 · ${t}]`);
+            }
+            return r;
+        } finally {
+            clearTimeout(timer);
+        }
     }
 
     async getPopular(page) {
-        await notesRefresh(this.client);
+        // 업데이트 내역·버전 받기는 최대 2초만 (안 되면 목록부터 — 앱이 목록을 40초까지만 기다림)
+        await Promise.race([notesRefresh(this.client).catch(() => {}), new Promise((r) => setTimeout(r, 2000))]);
         const r = await this.listPage(ruleRead(KEY, true, RULE_SIZES) || DEFAULT_POPULAR, page);
         return r;
     }
