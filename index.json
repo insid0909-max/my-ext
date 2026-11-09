@@ -98,15 +98,15 @@
     "dateFormatLocale": "",
     "isNsfw": false,
     "hasCloudflare": false,
-    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.3",
+    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.4",
     "apiUrl": "",
-    "version": "0.0.3",
+    "version": "0.0.4",
     "isManga": false,
     "itemType": 1,
     "isFullData": false,
     "appMinVerReq": "0.5.0",
     "additionalParams": "",
     "sourceCodeLanguage": 1,
-    "notes": "실제 재생 시험판: 진단용 강제 중단 해제. 영상 주소 반환은 재생 성공을 의미하지 않습니다. 기존 티비룸 변경 없음."
+    "notes": "로컬 프록시 별도 GET 사전검사: HTTP 상태·EXTM3U 여부만 기록. 실제 플레이어·영상조각·키 수신 미검사. 원래 주소 반환과 키 처리 유지."
   }
 ]
