@@ -1,0 +1,43 @@
+{
+  "checked_at": "2026-11-09T07:59:57.798430+00:00",
+  "scope": "Two known static JavaScript files only; no cookies, tokens, keys, media, API calls or JavaScript execution. Excerpts are lexical evidence, not execution tracing.",
+  "files": [
+    {
+      "file": "DPlayer.min.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "bytes_read": 431446,
+      "sha256": "cf458f66e886463798f4ab03d6c2803b3db3b7c5db76fb80f73b17f6bea51fc6",
+      "MediaInfo_count": 0,
+      "LoadRequest_count": 0,
+      "loadMedia_count": 0,
+      "loadSource_count": 0,
+      "initChromecast_count": 1,
+      "customType_count": 0,
+      "keyLoader_count": 0,
+      "excerpts": [
+        {
+          "term": "initChromecast",
+          "masked_code": "tring]\"dplayer-volume-active\"[string]\"click\"[string]\"volume\"[string]\"width\"[string]\"volume\"[string]\"width\"[string]\"initQualityButton\"[string]\"click\"[string]\"dplayer-quality-item\"[string]\"initScreenshotButton\"[string]\"click\"[string]\"canvas\"[string]\"2d\"[string]\"a\"[string]\"DPlayer.png\"[string]\"none\"[string]\"screenshot\"[string]\"initAirplayButton\"[string]\"webkitplaybacktargetavailabilitychanged\"[string]\"available\"[string]\"click\"[string]\"none\"[string]\"initChromecast\"[string]\"script\"[string]\"type\"[string]\"text/javascript\"[string]\"src\"[string]\"https:[comment]\n                writable: !1\n            }),\n            n\n        }();\n        const Ka = _a;\n        \n        const Za = Ka\n    }\n    )(),\n    a.default\n}\n)()));\n[comment]\n"
+        }
+      ],
+      "result": "downloaded_not_executed"
+    },
+    {
+      "file": "stop.js",
+      "status": 200,
+      "content_type": "application/javascript",
+      "bytes_read": 5337,
+      "sha256": "a8d90327d1c154a9c340e684e2bebf79070ddf9dc99f952017499d52f900f75f",
+      "MediaInfo_count": 0,
+      "LoadRequest_count": 0,
+      "loadMedia_count": 0,
+      "loadSource_count": 0,
+      "initChromecast_count": 0,
+      "customType_count": 0,
+      "keyLoader_count": 0,
+      "excerpts": [],
+      "result": "downloaded_not_executed"
+    }
+  ]
+}
