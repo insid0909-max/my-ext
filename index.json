@@ -66,7 +66,7 @@
     "notes": ""
   },
   {
-    "name": "티비룸",
+    "name": "티비룸(글리치전용)",
     "id": 1230463291,
     "baseUrl": "https://tvroom46.org",
     "lang": "ko",
@@ -76,15 +76,15 @@
     "dateFormatLocale": "",
     "isNsfw": false,
     "hasCloudflare": false,
-    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom.js?v=1.0.11",
+    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom.js?v=1.0.12",
     "apiUrl": "",
-    "version": "1.0.11",
+    "version": "1.0.12",
     "isManga": false,
     "itemType": 1,
     "isFullData": false,
     "appMinVerReq": "0.5.0",
     "additionalParams": "",
     "sourceCodeLanguage": 1,
-    "notes": "글리치 버전용."
+    "notes": "Mangayomi Glitch 전용. 순정 Mangayomi에서는 재생을 지원하지 않습니다."
   }
 ]
