@@ -10,15 +10,15 @@
     "dateFormatLocale": "",
     "isNsfw": false,
     "hasCloudflare": false,
-    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_webview_test.js?v=0.0.1",
+    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_webview_test.js?v=0.0.2",
     "apiUrl": "",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "isManga": false,
     "itemType": 1,
     "isFullData": false,
     "appMinVerReq": "0.5.0",
     "additionalParams": "",
     "sourceCodeLanguage": 1,
-    "notes": "순정 0.9.95 웹뷰 주소 인계 시험. 실제 재생 미검증. 웹뷰 결과 반환 후 종료됨. HttpOnly 쿠키 전달·키 변환·영상 조각 변환 없음. A 직접 인계 / B 순정 프록시. 기존 글리치 전용 확장과 별개."
+    "notes": "진단 보정판. 하나의 영상 요소에서 탐색 없이 시간 진행을 확인하고 그 영상의 직접 주소만 인계. 다중 영상·blob 주소 대응 불가·재생 실패 구분. 쿠키·키·조각 변환 없음. 실제 휴대폰 재생 미검증."
   }
 ]
