@@ -1,0 +1,52 @@
+name: Tvroom stock test 08
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/tvroom-stock-test08.yml']
+permissions:
+  contents: write
+jobs:
+  build:
+    if: github.event.head_commit.message == 'Prepare tvroom stock 0.0.8 static script probe'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          node <<'NODE'
+          const fs=require('node:fs'),assert=require('node:assert/strict'),crypto=require('node:crypto'),vm=require('node:vm');const p='anime/tvroom_stock_test.js',main='anime/tvroom.js',before=fs.readFileSync(p,'utf8'),original=fs.readFileSync(main,'utf8'),hash=s=>crypto.createHash('sha1').update('blob '+Buffer.byteLength(s)+'\0').update(s).digest('hex');assert.equal(hash(before),'a45a6cc32a8551a77de1a01643085e6040e2280e');const start=before.lastIndexOf(';(function(P){');assert(start>0);
+          const patch=String.raw`
+          ;(function(P){
+          const cast=['chromecast','cast-register','player_api/cast','requestSession','cast_sender','TVP_CONFIG'],key=['encrypted_key','segment_sizes','permutation','noise_length','keyLoader','loader','decrypt'];
+          const flags=(s,a)=>a.filter(x=>s.toLowerCase().includes(x.toLowerCase())).join(',')||'-';
+          P.getVideoList=async function(u){
+          const report=['0.0.8 静的診断'];
+          try{
+          const path=this.path(u,true),doc=await this.document(path.series+'/'+path.episode),src=String(doc.selectFirst('iframe#view_iframe')?.attr('src')||'').trim(),origin=/^https:\/\/[a-z0-9.-]+(?::[0-9]+)?(?=\/|$)/i.exec(src)?.[0];if(!origin)throw Error('frame');
+          const c=new Client({timeout:8,connectTimeout:4,followRedirects:false}),headers={'User-Agent':USER_AGENT,Referer:this.baseUrl+'/'},r=await c.get(src,headers);report.push('HTML '+Number(r.statusCode));
+          if(Number(r.statusCode)===200){
+          const body=String(r.body||'');report.push('H C='+flags(body,cast)+' K='+flags(body,key));
+          const scripts=[...body.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)].map(m=>m[1]);let n=0,skipped=0;const seen=new Set();
+          for(const raw of scripts){
+          if(n>=2)break;let target='';try{if(typeof URL==='function')target=new URL(raw,src).href;else if(raw.startsWith(origin+'/'))target=raw;else if(raw.startsWith('/')&&!raw.startsWith('//'))target=origin+raw;else if(!/^[a-z][a-z0-9+.-]*:|^\/\//i.test(raw)&&!raw.includes('..'))target=src.split(/[?#]/)[0].replace(/[^/]*$/,'')+raw}catch(_){}
+          const clean=target.split(/[?#]/)[0];if(!target.startsWith(origin+'/')||!clean.endsWith('.js')||/\/(?:jquery|hls|video|shaka|jwplayer)(?:[.-][^/]*)?\.js$/i.test(clean)||seen.has(target)){skipped++;continue}seen.add(target);n++;
+          try{const js=await c.get(target,{'User-Agent':USER_AGENT,Referer:src}),text=String(js.body||'');report.push('J'+n+' '+Number(js.statusCode)+(Number(js.statusCode)===200?(text.length>600000?' 크기초과 미분석':' C='+flags(text,cast)+' K='+flags(text,key)):''))}catch(_){report.push('J'+n+' 요청실패')}
+          }report.push('스크립트 '+scripts.length+' / 검사 '+n+' / 제외 '+skipped);
+          }
+          }catch(_){report.push('조회·분석 실패')}
+          report.push('문자열 단서일 뿐 지원 확정 아님. 키·영상·API 미요청. JS 미실행. 진단용 재생 중단.');throw Error(report.join(' | '));
+          };
+          })(DefaultExtension.prototype);
+          `;
+          const fixed=patch.replace('静的診断','정적진단'),out=before.slice(0,start).replaceAll('0.0.7','0.0.8')+fixed;new vm.Script(out);
+          async function test(){class Extension{};Extension.prototype.path=()=>({series:'/video/test',episode:'1'});Extension.prototype.document=async()=>({selectFirst:()=>({attr:()=> 'https://example.com/frame?token=SECRET'})});Object.defineProperty(Extension.prototype,'baseUrl',{get:()=> 'https://example.com'});let calls=[];const context={DefaultExtension:Extension,USER_AGENT:'test',Client:class{async get(u){calls.push(u);return {statusCode:200,body:calls.length===1?'<script src="/custom.js?token=SECRET"></script> chromecast':'encrypted_key requestSession'}}}};vm.runInNewContext(fixed,context);await assert.rejects(()=>new Extension().getVideoList('/test'),e=>e.message.includes('J1 200 C=requestSession K=encrypted_key')&&!e.message.includes('SECRET'));assert.equal(calls.length,2);
+          const index=JSON.parse(fs.readFileSync('index.json','utf8')),row=index.find(x=>x.id===1230463292);assert(row);assert.equal(row.version,'0.0.7');row.version='0.0.8';row.sourceCodeUrl='https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.8';row.notes='진단 전용: HTML 및 동일 호스트 비라이브러리 JS 최대 2개 GET·문자열 정적검사. 리다이렉트 안따름. JS 실행·키·영상·캐스트 API 요청 안함. 주소·토큰·쿠키·본문 비표시. 단서 발견은 기능 지원 확정 아님. 결과창 후 재생 중단. 기존 티비룸 유지.';fs.writeFileSync(p,out);fs.writeFileSync('index.json',JSON.stringify(index,null,2)+'\n');assert.equal(fs.readFileSync(main,'utf8'),original)}test().catch(e=>{console.error(e);process.exitCode=1});
+          NODE
+          git config user.name 'insid0909-max'
+          git config user.email '266083559+insid0909-max@users.noreply.github.com'
+          git add anime/tvroom_stock_test.js index.json
+          git diff --cached --check
+          git commit -m 'Tvroom stock 0.0.8 static script diagnostic [skip ci]'
+          git push origin HEAD:main
