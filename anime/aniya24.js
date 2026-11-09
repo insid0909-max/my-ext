@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.1.7",
+    "version": "0.1.8",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/aniya24.js"
@@ -431,23 +431,9 @@ class DefaultExtension extends MProvider {
         // 사이트가 앱 통신에 보안 확인(Cloudflare)을 걸면 앱의 자동 통과가 실패함(2026-11-09 사용자 화면, 15.7초 뒤 "Failed to bypass Cloudflare")
         // → 숨은 웹뷰로 화면을 열어 내용을 받음(사용자가 웹뷰로 여는 것과 같음). 한 번 막히면 6시간은 웹뷰부터
         this.webNote = "";
-        // [시험] 기본 통신이 보안 확인에 막힐 때 Dart 통신(useDartHttpClient)으로는 통과되는지 (2026-11-09, 결과는 오류 [ ] 에)
         if (site && webFirst()) {
-            const t1 = Date.now();
-            try {
-                if (!this.dartClient) this.dartClient = new Client({ useDartHttpClient: true });
-                const r = await this.dartClient.get(url, { "Referer": `${base}/` });
-                const b = String((r && r.body) || "");
-                this.dartNote = `Dart ${r && r.statusCode} ${b.length}자 ${((Date.now() - t1) / 1000).toFixed(1)}초`;
-                if (r && r.statusCode < 400 && b.includes("beeteam368")) return b;
-                if (r && r.statusCode === 404 && missingOk) return "";
-            } catch (e) {
-                this.dartNote = `Dart 오류 ${((Date.now() - t1) / 1000).toFixed(1)}초 ${String((e && e.message) || e).replace(/\s+/g, " ").substring(0, 40)}`;
-            }
-            if (Date.now() - t1 < 18000) {
-                const w = await this.viaWebview(url);
-                if (w) return w;
-            }
+            const w = await this.viaWebview(url);
+            if (w) return w;
         }
         const h = this.getHeaders(url);
         let res = null;
@@ -473,7 +459,7 @@ class DefaultExtension extends MProvider {
             setWebFirst();
             const w = await this.viaWebview(url);
             if (w) return w;
-            throw new Error(`${LABEL} 보안 확인을 통과하지 못했어요. 오른쪽 위 웹뷰(지구본)로 사이트를 한 번 열었다가 돌아와 다시 시도해 주세요. [${this.dartNote ? this.dartNote + " · " : ""}${this.webNote || "웹뷰 없음"}]`);
+            throw new Error(`${LABEL} 보안 확인을 통과하지 못했어요. 오른쪽 위 웹뷰(지구본)로 사이트를 한 번 열었다가 돌아와 다시 시도해 주세요. [${this.webNote || "웹뷰 없음"}]`);
         }
         if (!res) throw new Error(`${LABEL} 접속 실패: ${lastErr.substring(0, 80)}`);
         if (res.statusCode === 404 && missingOk) return "";
@@ -584,7 +570,7 @@ class DefaultExtension extends MProvider {
         const LATE = {};
         const late = new Promise((r) => setTimeout(() => r(LATE), 36000));
         const html = await Promise.race([this.get(path, true), late]);
-        if (html === LATE) throw new Error(`${LABEL} 사이트 응답이 36초 넘게 없어요. 한 번 더 재시도해 주세요(두 번째부터는 웹뷰로 바로 받아요) [${path.substring(0, 50)}${this.dartNote ? " · " + this.dartNote : ""}${this.webNote ? " · " + this.webNote : ""}]`);
+        if (html === LATE) throw new Error(`${LABEL} 사이트 응답이 36초 넘게 없어요. 한 번 더 재시도해 주세요(두 번째부터는 웹뷰로 바로 받아요) [${path.substring(0, 50)}${this.webNote ? " · " + this.webNote : ""}]`);
         {
             const r = this.parseCards(html, page);
             if (!r.list.length && page === 1 && html) {
