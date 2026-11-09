@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.1.4",
+    "version": "0.1.5",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/aniya24.js"
@@ -51,6 +51,21 @@ const DEFAULT_LATEST = [0, 0];
 
 function ruleText(i) {
     return `${KINDS[i[0]][0]} · ${SORTS[i[1]][0]}`;
+}
+
+// 앱 통신이 보안 확인에 막힌 뒤 6시간은 웹뷰부터
+function webFirst() {
+    try {
+        return Date.now() < (Number(new SharedPreferences().getString("aniya24_web_until", "0")) || 0);
+    } catch (e) {
+        return false;
+    }
+}
+
+function setWebFirst() {
+    try {
+        new SharedPreferences().setString("aniya24_web_until", String(Date.now() + 6 * 3600000));
+    } catch (e) {}
 }
 
 let lastSiteRequest = 0;
@@ -287,8 +302,6 @@ function ruleFilters(prefix, sizes, defaults, text) {
 // → 그런 응답이면 User-Agent 를 넣어 다시 보내고, 그 뒤로는 처음부터 넣음 (원래 망가요미는 첫 요청이 성공해 그대로)
 let APP_NO_UA = false;
 let APP_ALT = null;
-let NET_TRACE = [];
-let NET_T0 = Date.now();
 // 주소를 못 찾는 오류(host lookup 실패)는 바로 할 일이 보이는 쉬운 말로 (2026-11-03)
 function dnsFriendly(e, url) {
     const m = String((e && e.message) || e || "");
@@ -322,10 +335,7 @@ function appClient(raw) {
         }
         return APP_ALT;
     };
-    // [임시 진단] 통신 단계 기록 (애니야24 목록 30초 멈춤 원인 찾기, 찾으면 뺄 것)
-    const tr = (m) => { try { NET_TRACE.push(`${((Date.now() - NET_T0) / 1000).toFixed(1)}s ${m}`); if (NET_TRACE.length > 12) NET_TRACE.shift(); } catch (e) {} };
-    const short = (e) => String((e && e.message) || e).replace(/\s+/g, " ").substring(0, 50);
-    const send0 = async (call, url, headers) => {
+    const send = async (call, url, headers) => {
         if (APP_NO_UA || media.test(String(url || ""))) {
             try {
                 return await call(raw, url, APP_NO_UA ? withUa(headers) : headers || {});
@@ -340,6 +350,8 @@ function appClient(raw) {
             res = await call(raw, url, strip(url, headers));
         } catch (e) {
             res = null;
+            // 앱의 Cloudflare 자동 통과가 실패한 것(약 15초 걸림)은 다시 보내도 같으니 바로 넘김
+            if (/cloudflare/i.test(String((e && e.message) || e))) throw e;
             try {
                 const again = await call(raw, url, withUa(headers));
                 APP_NO_UA = true;
@@ -364,22 +376,6 @@ function appClient(raw) {
             } catch (e) {}
         }
         return res;
-    };
-    const send = async (call, url, headers) => {
-        const host = (/^https?:\/\/([^/?#]+)/.exec(String(url || "")) || [null, "?"])[1];
-        const wrap = (name, c0) => async (c, u, h) => {
-            const ua = Object.keys(h || {}).some((k) => k.toLowerCase() === "user-agent") ? "UA" : "UA없음";
-            tr(`${host} ${c === APP_ALT ? "다른통신" : name} ${ua} 시작`);
-            try {
-                const r = await c0(c, u, h);
-                tr(`→ ${r && r.statusCode} ${String((r && r.body) || "").length}자`);
-                return r;
-            } catch (e) {
-                tr(`→ 오류 ${short(e)}`);
-                throw e;
-            }
-        };
-        return send0(wrap("기본", call), url, headers);
     };
     return {
         get: (url, headers) => send((c, u, h) => c.get(u, h), url, headers).catch((e) => { throw dnsFriendly(e, url); }),
@@ -431,24 +427,67 @@ class DefaultExtension extends MProvider {
     async get(path, missingOk) {
         const base = this.getBaseUrl();
         const url = /^https?:\/\//.test(path) ? path : base + path;
+        const site = url.startsWith(base);
+        // 사이트가 앱 통신에 보안 확인(Cloudflare)을 걸면 앱의 자동 통과가 실패함(2026-11-09 사용자 화면, 15.7초 뒤 "Failed to bypass Cloudflare")
+        // → 숨은 웹뷰로 화면을 열어 내용을 받음(사용자가 웹뷰로 여는 것과 같음). 한 번 막히면 6시간은 웹뷰부터
+        if (site && webFirst()) {
+            const w = await this.viaWebview(url);
+            if (w) return w;
+        }
         const h = this.getHeaders(url);
         let res = null;
+        let cf = false;
+        let lastErr = "";
         for (let attempt = 0; attempt < 2 && !res; attempt++) {
-            if (url.startsWith(base)) await siteWait();
+            if (site) await siteWait();
             try {
                 res = await this.client.get(url, h);
             } catch (e) {
-                if (attempt === 1) throw new Error(`${LABEL} 접속 실패: ${String((e && e.message) || e).substring(0, 80)}`);
+                lastErr = String((e && e.message) || e);
+                if (/cloudflare/i.test(lastErr)) {
+                    cf = true;
+                    break;
+                }
+                if (attempt === 1) throw new Error(`${LABEL} 접속 실패: ${lastErr.substring(0, 80)}`);
                 await new Promise((r) => setTimeout(r, 700));
             }
         }
-        const body = String(res.body || "");
-        if (res.statusCode === 404 && missingOk) return "";
-        if (res.statusCode === 403 && /Just a moment|cf-chl|challenge-platform/i.test(body)) {
-            throw new Error(`${LABEL} 보안 확인이 필요해요. 오른쪽 위 웹뷰(지구본)로 사이트를 한 번 열었다가 돌아와 다시 시도해 주세요.`);
+        const body = res ? String(res.body || "") : "";
+        if (res && (res.statusCode === 403 || res.statusCode === 503) && /Just a moment|cf-chl|challenge-platform/i.test(body)) cf = true;
+        if (cf && site) {
+            setWebFirst();
+            const w = await this.viaWebview(url);
+            if (w) return w;
+            throw new Error(`${LABEL} 보안 확인을 통과하지 못했어요. 오른쪽 위 웹뷰(지구본)로 사이트를 한 번 열었다가 돌아와 다시 시도해 주세요.`);
         }
+        if (!res) throw new Error(`${LABEL} 접속 실패: ${lastErr.substring(0, 80)}`);
+        if (res.statusCode === 404 && missingOk) return "";
         if (res.statusCode >= 400) throw new Error(`${LABEL} 접속 실패 (HTTP ${res.statusCode}). 주소가 바뀌었으면 설정에서 새 주소를 넣어 주세요.`);
         return body;
+    }
+
+    /** 숨은 웹뷰로 화면을 열고, 진짜 화면(테마 표시 beeteam368)이 되면 그 HTML 을 받음. 최대 14초 */
+    async viaWebview(url) {
+        if (typeof evaluateJavascriptViaWebview !== "function") return null;
+        // 확인 화면은 통과 뒤 스스로 새로고침하는데 새 화면엔 이 스크립트가 다시 안 들어갈 수 있어,
+        // 1.5초마다 같은 주소를 화면 안에서 다시 받아 봄(사이트가 준 통과 쿠키 그대로)
+        const script = "(function(){var done=false;function send(h){if(done)return;done=true;" +
+            "window.flutter_inappwebview.callHandler('setResponse',h);}" +
+            "function ok(h){return h&&h.indexOf('beeteam368')>=0&&h.indexOf('challenge-platform')<0;}" +
+            "function f(){var h=document.documentElement.outerHTML;if(ok(h)){send(h);return true;}return false;}" +
+            "if(f())return;var n=0;var t=setInterval(function(){if(done||f()){clearInterval(t);return;}n++;" +
+            "if(n%5===0&&window.fetch){fetch(location.href,{credentials:'include'}).then(function(r){return r.text();})" +
+            ".then(function(h){if(ok(h)){clearInterval(t);send(h);}}).catch(function(){});}},300);})();";
+        try {
+            const NONE = {};
+            const res = await Promise.race([
+                evaluateJavascriptViaWebview(url, {}, [script]),
+                new Promise((r) => setTimeout(() => r(NONE), 14000)),
+            ]);
+            return res && res !== NONE && String(res).includes("beeteam368") ? String(res) : null;
+        } catch (e) {
+            return null;
+        }
     }
 
     abs(u) {
@@ -523,12 +562,10 @@ class DefaultExtension extends MProvider {
         const t0 = Date.now();
         const path = this.listPath(idx, page);
         // 망가요미에는 clearTimeout 이 없음 → 늦음 표시는 값으로 돌려받아 판단
-        NET_TRACE = [];
-        NET_T0 = Date.now();
         const LATE = {};
         const late = new Promise((r) => setTimeout(() => r(LATE), 30000));
         const html = await Promise.race([this.get(path, true), late]);
-        if (html === LATE) throw new Error(`${LABEL} 사이트 응답이 30초 넘게 없어요 [${path.substring(0, 50)}] 기록: ${NET_TRACE.join(" | ")}`);
+        if (html === LATE) throw new Error(`${LABEL} 사이트 응답이 30초 넘게 없어요. 잠시 뒤 다시, 또는 웹뷰로 사이트를 한 번 열었다 와 주세요 [${path.substring(0, 60)}]`);
         {
             const r = this.parseCards(html, page);
             if (!r.list.length && page === 1 && html) {
