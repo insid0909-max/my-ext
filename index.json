@@ -98,15 +98,15 @@
     "dateFormatLocale": "",
     "isNsfw": false,
     "hasCloudflare": false,
-    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.10",
+    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.11",
     "apiUrl": "",
-    "version": "0.0.10",
+    "version": "0.0.11",
     "isManga": false,
     "itemType": 1,
     "isFullData": false,
     "appMinVerReq": "0.5.0",
     "additionalParams": "",
     "sourceCodeLanguage": 1,
-    "notes": "재생 비교시험: 0.0.3 기준으로 후속 강제중단 진단 제거, 반환 headers만 빈 객체로 변경. 프록시 생성 headers·키 처리 유지. 키 문제 해결 보장 아님. 기존 티비룸 변경 없음."
+    "notes": "재생시험: 확장이 재생목록을 직접 받아 복원 키를 data: 주소로 재생목록 안에 넣고, 재생목록 전체를 data: 주소로 플레이어에 전달(A). 순정 프록시 방식(B) 함께 제공. 실기기 재생 확인 전. 기존 티비룸 변경 없음."
   }
 ]
