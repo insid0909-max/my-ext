@@ -1,0 +1,38 @@
+name: Tvroom stock test 01
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/tvroom-stock-test01.yml']
+permissions:
+  contents: write
+jobs:
+  build:
+    if: github.event.head_commit.message == '티비룸 순정 호환시험 0.0.1 준비'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          node <<'NODE'
+          const fs=require('node:fs'),assert=require('node:assert/strict'),crypto=require('node:crypto'),cp=require('node:child_process');const src='anime/tvroom.js',dest='anime/tvroom_stock_test.js',before=fs.readFileSync(src,'utf8'),hash=s=>crypto.createHash('sha1').update('blob '+Buffer.byteLength(s)+'\0').update(s).digest('hex');assert.equal(hash(before),'b4c101b4f0ec16f0cf6f0cd8a6deb5d8a743cbf1');assert(!fs.existsSync(dest));let out=before;function swap(a,b){assert.equal(out.split(a).length,2,a);out=out.replace(a,b);}swap('id:1230463291,name:"티비룸"','id:1230463292,name:"티비룸 순정 호환시험"');swap('version:"1.0.11"','version:"0.0.1"');
+          out+=String.raw`
+          ;(function(P){
+              const video=P.getVideoList,detail=P.getDetail,filters=P.getFilterList,descriptor=Object.getOwnPropertyDescriptor(P,'client');
+              const persist=s=>{try{new SharedPreferences().setString('tvroom_stock_test01_last',s);}catch(_){}};
+              const last=()=>{try{return String(new SharedPreferences().get('tvroom_stock_test01_last')||'아직 재생 시도 없음');}catch(_){return '진단 저장소 읽기 실패';}};
+              const reason=e=>{const m=String(e&&e.message||e||'');const http=/HTTP\s*(\d{3})/.exec(m);if(http)return 'HTTP '+http[1];if(/selectFirst/.test(m))return '문서 선택 API 호환 오류';if(/지원하지 않는 재생 키|재생 키를 복원/.test(m))return '키 형식 또는 복원 실패';if(/재생 키/.test(m))return '키 요청 실패';if(/프록시|createHlsProxyUrl/.test(m))return 'HLS 프록시 미지원 또는 시작 실패';if(/m3u8|재생 목록/.test(m))return 'm3u8 추출 또는 요청 실패';if(/플레이어|재생 정보/.test(m))return '플레이어 추출 또는 요청 실패';if(/인증|WebView|captcha/i.test(m))return '사이트 인증 확인 필요';if(/timeout|시간|timed out/i.test(m))return '요청 시간 초과';return '기타 실행 오류';};
+              if(descriptor&&descriptor.get)Object.defineProperty(P,'client',{configurable:true,get(){const raw=descriptor.get.call(this);if(this._stockRaw01!==raw){this._stockRaw01=raw;this._stockClient01={};for(const method of ['get','post','head'])if(typeof raw[method]==='function')this._stockClient01[method]=async(...args)=>{const trace=this._stockTrace01;try{const response=await raw[method](...args);if(trace&&trace.length<12)trace.push(method.toUpperCase()+' HTTP '+Number(response.statusCode||0));return response;}catch(e){if(trace&&trace.length<12)trace.push(method.toUpperCase()+' 요청 실패');throw e;}};}return this._stockClient01;}});
+              P.getVideoList=async function(url){if(this._stockBusy01)throw Error('티비룸 시험: 이전 재생 진단이 진행 중입니다.');this._stockBusy01=true;this._stockTrace01=[];const capability=typeof createHlsProxyUrl==='function'?'HLS 프록시 함수 있음':'HLS 프록시 함수 없음';try{const result=await video.call(this,url);if(!Array.isArray(result)||!result.length)throw Error('재생 정보 없음');const local=result.some(x=>/^http:\/\/127\.0\.0\.1(?::\d+)?\//.test(String(x.url||'')));persist('시험 0.0.1 | '+capability+' | 영상 주소 반환'+(local?' · 로컬 프록시':'')+' | '+this._stockTrace01.join(' → ')+' | 실제 재생 성공 여부는 별도 확인 필요');return result;}catch(e){const report='시험 0.0.1 | '+capability+' | '+reason(e)+' | '+this._stockTrace01.join(' → ');persist(report);throw Error(report);}finally{this._stockTrace01=null;this._stockBusy01=false;}};
+              P.getDetail=async function(url){const d=await detail.call(this,url);d.description=(d.description||'')+'\n\n[순정 호환시험 · 마지막 재생 시도]\n'+last()+'\n진단에는 영상 주소·쿠키·키 값을 기록하지 않습니다.';return d;};
+              P.getFilterList=function(){return [{type_name:'HeaderFilter',name:'순정 호환 진단판 0.0.1 · 기존 티비룸과 별도'}, {type_name:'HeaderFilter',name:last()},...filters.call(this)];};
+          })(DefaultExtension.prototype);
+          `;fs.writeFileSync(dest,out);cp.execFileSync(process.execPath,['--check',dest]);const index=JSON.parse(fs.readFileSync('index.json','utf8')),original=index.find(x=>x.id===1230463291);assert(original);assert.equal(original.version,'1.0.11');assert(!index.some(x=>x.id===1230463292));index.push({...original,id:1230463292,name:'티비룸 순정 호환시험',version:'0.0.1',sourceCodeUrl:'https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.1',notes:'순정앱 재생 실패 단계 확인용 진단판. 재생 호환 수정 완료 버전이 아닙니다.'});fs.writeFileSync('index.json',JSON.stringify(index,null,2)+'\n');assert.equal(hash(fs.readFileSync(src,'utf8')),'b4c101b4f0ec16f0cf6f0cd8a6deb5d8a743cbf1');
+          NODE
+          git config user.name 'insid0909-max'
+          git config user.email '266083559+insid0909-max@users.noreply.github.com'
+          git add anime/tvroom_stock_test.js index.json
+          git diff --cached --check
+          git commit -m '티비룸 순정 호환 진단 시험판 0.0.1 배포 [skip ci]'
+          git push origin HEAD:main
