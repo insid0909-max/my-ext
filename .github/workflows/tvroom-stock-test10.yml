@@ -1,0 +1,32 @@
+name: Tvroom stock test 10
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/tvroom-stock-test10.yml']
+permissions:
+  contents: write
+jobs:
+  build:
+    if: github.event.head_commit.message == 'Prepare tvroom stock 0.0.10 empty playback headers'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          node <<'NODE'
+          const fs=require('node:fs'),assert=require('node:assert/strict'),crypto=require('node:crypto'),cp=require('node:child_process'),vm=require('node:vm');const p='anime/tvroom_stock_test.js',main='anime/tvroom.js',original=fs.readFileSync(main,'utf8'),hash=s=>crypto.createHash('sha1').update('blob '+Buffer.byteLength(s)+'\0').update(s).digest('hex');assert.equal(hash(fs.readFileSync(p,'utf8')),'136c6aebc8764419405b08d5eba4141605ad9886');const base=cp.execFileSync('git',['cat-file','blob','9b7c09922774d320df5519634e1d7814f7ec8ac7'],{encoding:'utf8'});assert.equal(hash(base),'9b7c09922774d320df5519634e1d7814f7ec8ac7');
+          const target='return[{url:g,originalUrl:c,quality:"자동 (HLS)",headers:a}];';assert.equal(base.split(target).length,2);const out=base.replace(target,'return[{url:g,originalUrl:c,quality:"자동 (HLS)",headers:{}}];').replaceAll('0.0.3','0.0.10');new vm.Script(out);assert(out.includes('createHlsProxyUrl(c,h)'));assert(!out.includes('진단 전용: 결과 표시'));
+          const begin=out.indexOf('async getVideoList(t){'),end=out.indexOf('unscramble(t){',begin);assert(begin>=0&&end>begin);
+          async function test(){let proxyHeaders;const context={USER_AGENT:'test',attr:(node,key)=>node.attr(key),createHlsProxyUrl:async(url,h)=>{proxyHeaders=h;return 'http://127.0.0.1:1234/list'}};vm.runInNewContext('class Test {'+out.slice(begin,end)+'};this.Test=Test;',context);const extension=new context.Test();extension.path=()=>({series:'/video/test',episode:'1'});extension.baseUrl='https://example.com';extension.document=async()=>({selectFirst:()=>({attr:()=> 'https://player.example.com/frame'})});extension.unscramble=()=> '00112233445566778899aabbccddeeff';extension.client={get:async(url)=>({statusCode:200,body:url.endsWith('/frame')?'https://player.example.com/stream/m3u8/test':url.includes('/stream/m3u8/')?'#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="https://player.example.com/key"\n#EXTINF:4,\nsegment.ts':'test-key'})};const result=await extension.getVideoList('/test');assert.equal(result[0].url,'http://127.0.0.1:1234/list');assert.equal(result[0].originalUrl,'https://player.example.com/stream/m3u8/test');assert.equal(Object.keys(result[0].headers).length,0);assert.equal(proxyHeaders['X-Hls-Key'],'00112233445566778899aabbccddeeff');assert.equal(proxyHeaders.Referer,'https://player.example.com/');
+          const index=JSON.parse(fs.readFileSync('index.json','utf8')),row=index.find(x=>x.id===1230463292);assert(row);assert.equal(row.version,'0.0.9');row.version='0.0.10';row.sourceCodeUrl='https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.10';row.notes='再生比較試験';row.notes='재생 비교시험: 0.0.3 기준으로 후속 강제중단 진단 제거, 반환 headers만 빈 객체로 변경. 프록시 생성 headers·키 처리 유지. 키 문제 해결 보장 아님. 기존 티비룸 변경 없음.';fs.writeFileSync(p,out);fs.writeFileSync('index.json',JSON.stringify(index,null,2)+'\n');assert.equal(fs.readFileSync(main,'utf8'),original)}test().catch(e=>{console.error(e);process.exitCode=1});
+          NODE
+          git config user.name 'insid0909-max'
+          git config user.email '266083559+insid0909-max@users.noreply.github.com'
+          git add anime/tvroom_stock_test.js index.json
+          git diff --cached --check
+          git commit -m 'Tvroom stock 0.0.10 empty playback headers test [skip ci]'
+          git push origin HEAD:main
