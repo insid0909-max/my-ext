@@ -98,15 +98,15 @@
     "dateFormatLocale": "",
     "isNsfw": false,
     "hasCloudflare": false,
-    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.5",
+    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.6",
     "apiUrl": "",
-    "version": "0.0.5",
+    "version": "0.0.6",
     "isManga": false,
     "itemType": 1,
     "isFullData": false,
     "appMinVerReq": "0.5.0",
     "additionalParams": "",
     "sourceCodeLanguage": 1,
-    "notes": "진단 전용: 회차 실행 시 로컬 프록시 사전검사 결과를 오류창에 직접 표시하고 재생을 의도적으로 중단합니다. 플레이어·영상조각·키 수신 미검사. 기존 티비룸과 키 처리 유지."
+    "notes": "진단 전용: 동일 로컬 프록시의 키·초기화·첫 영상조각 최대 각 1건 응답 확인 후 직접 결과창 표시·재생 중단. 영상은 1024바이트 Range 요청이나 서버가 무시하면 전체 조각을 받을 수 있음. 선언길이는 실수신 바이트 수가 아님. 키·주소·본문 기록 안함. 기존 티비룸·키 처리 유지."
   }
 ]
