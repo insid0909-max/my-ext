@@ -1,0 +1,24 @@
+[
+  {
+    "name": "티비룸 웹뷰 인계시험",
+    "id": 1230463293,
+    "baseUrl": "https://tvroom46.org",
+    "lang": "ko",
+    "typeSource": "single",
+    "iconUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/icon.png",
+    "dateFormat": "",
+    "dateFormatLocale": "",
+    "isNsfw": false,
+    "hasCloudflare": false,
+    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_webview_test.js?v=0.0.1",
+    "apiUrl": "",
+    "version": "0.0.1",
+    "isManga": false,
+    "itemType": 1,
+    "isFullData": false,
+    "appMinVerReq": "0.5.0",
+    "additionalParams": "",
+    "sourceCodeLanguage": 1,
+    "notes": "순정 0.9.95 웹뷰 주소 인계 시험. 실제 재생 미검증. 웹뷰 결과 반환 후 종료됨. HttpOnly 쿠키 전달·키 변환·영상 조각 변환 없음. A 직접 인계 / B 순정 프록시. 기존 글리치 전용 확장과 별개."
+  }
+]
