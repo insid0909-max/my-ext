@@ -98,15 +98,15 @@
     "dateFormatLocale": "",
     "isNsfw": false,
     "hasCloudflare": false,
-    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.2",
+    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.3",
     "apiUrl": "",
-    "version": "0.0.2",
+    "version": "0.0.3",
     "isManga": false,
     "itemType": 1,
     "isFullData": false,
     "appMinVerReq": "0.5.0",
     "additionalParams": "",
     "sourceCodeLanguage": 1,
-    "notes": "진단 전용: 회차 실행 시 재생 대신 결과창 표시. 저장소 미지원 시에도 직접 표시. 기존 티비룸은 변경 없음."
+    "notes": "실제 재생 시험판: 진단용 강제 중단 해제. 영상 주소 반환은 재생 성공을 의미하지 않습니다. 기존 티비룸 변경 없음."
   }
 ]
