@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.1.3",
+    "version": "0.1.4",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/aniya24.js"
@@ -287,6 +287,8 @@ function ruleFilters(prefix, sizes, defaults, text) {
 // → 그런 응답이면 User-Agent 를 넣어 다시 보내고, 그 뒤로는 처음부터 넣음 (원래 망가요미는 첫 요청이 성공해 그대로)
 let APP_NO_UA = false;
 let APP_ALT = null;
+let NET_TRACE = [];
+let NET_T0 = Date.now();
 // 주소를 못 찾는 오류(host lookup 실패)는 바로 할 일이 보이는 쉬운 말로 (2026-11-03)
 function dnsFriendly(e, url) {
     const m = String((e && e.message) || e || "");
@@ -320,7 +322,10 @@ function appClient(raw) {
         }
         return APP_ALT;
     };
-    const send = async (call, url, headers) => {
+    // [임시 진단] 통신 단계 기록 (애니야24 목록 30초 멈춤 원인 찾기, 찾으면 뺄 것)
+    const tr = (m) => { try { NET_TRACE.push(`${((Date.now() - NET_T0) / 1000).toFixed(1)}s ${m}`); if (NET_TRACE.length > 12) NET_TRACE.shift(); } catch (e) {} };
+    const short = (e) => String((e && e.message) || e).replace(/\s+/g, " ").substring(0, 50);
+    const send0 = async (call, url, headers) => {
         if (APP_NO_UA || media.test(String(url || ""))) {
             try {
                 return await call(raw, url, APP_NO_UA ? withUa(headers) : headers || {});
@@ -359,6 +364,22 @@ function appClient(raw) {
             } catch (e) {}
         }
         return res;
+    };
+    const send = async (call, url, headers) => {
+        const host = (/^https?:\/\/([^/?#]+)/.exec(String(url || "")) || [null, "?"])[1];
+        const wrap = (name, c0) => async (c, u, h) => {
+            const ua = Object.keys(h || {}).some((k) => k.toLowerCase() === "user-agent") ? "UA" : "UA없음";
+            tr(`${host} ${c === APP_ALT ? "다른통신" : name} ${ua} 시작`);
+            try {
+                const r = await c0(c, u, h);
+                tr(`→ ${r && r.statusCode} ${String((r && r.body) || "").length}자`);
+                return r;
+            } catch (e) {
+                tr(`→ 오류 ${short(e)}`);
+                throw e;
+            }
+        };
+        return send0(wrap("기본", call), url, headers);
     };
     return {
         get: (url, headers) => send((c, u, h) => c.get(u, h), url, headers).catch((e) => { throw dnsFriendly(e, url); }),
@@ -502,10 +523,12 @@ class DefaultExtension extends MProvider {
         const t0 = Date.now();
         const path = this.listPath(idx, page);
         // 망가요미에는 clearTimeout 이 없음 → 늦음 표시는 값으로 돌려받아 판단
+        NET_TRACE = [];
+        NET_T0 = Date.now();
         const LATE = {};
         const late = new Promise((r) => setTimeout(() => r(LATE), 30000));
         const html = await Promise.race([this.get(path, true), late]);
-        if (html === LATE) throw new Error(`${LABEL} 사이트 응답이 30초 넘게 없어요. 잠시 뒤 다시, 또는 웹뷰로 사이트를 한 번 열었다 와 주세요 [${path.substring(0, 60)}]`);
+        if (html === LATE) throw new Error(`${LABEL} 사이트 응답이 30초 넘게 없어요 [${path.substring(0, 50)}] 기록: ${NET_TRACE.join(" | ")}`);
         {
             const r = this.parseCards(html, page);
             if (!r.list.length && page === 1 && html) {
