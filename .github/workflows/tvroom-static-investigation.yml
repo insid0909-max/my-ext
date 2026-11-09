@@ -1,0 +1,67 @@
+name: Tvroom static source investigation
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/tvroom-static-investigation.yml']
+permissions:
+  contents: write
+jobs:
+  inspect:
+    if: github.event.head_commit.message == 'Prepare isolated tvroom static source investigation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch static text without executing it
+        run: |
+          python3 <<'PY'
+          import urllib.request,urllib.error,json,re,hashlib,pathlib,datetime
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self,*args,**kwargs): return None
+          opener=urllib.request.build_opener(NoRedirect())
+          targets=[('DPlayer.min.js','https://player-v2.pongping.top/resource/lib/DPlayer/DPlayer.min.js?v=1.1'),('stop.js','https://player-v2.pongping.top/resource/js/stop.js?v=1.1.1')]
+          rawdir=pathlib.Path('static-investigation-artifact');rawdir.mkdir(exist_ok=True)
+          report={'checked_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'scope':'Two known static JavaScript files only; no cookies, tokens, keys, media, API calls or JavaScript execution. Excerpts are lexical evidence, not execution tracing.','files':[]}
+          literal=re.compile(r'''\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`''',re.S)
+          for name,url in targets:
+              item={'file':name};report['files'].append(item)
+              try:
+                  req=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0','Accept':'application/javascript,text/javascript;q=0.9,*/*;q=0.1'})
+                  with opener.open(req,timeout=20) as response:
+                      item['status']=response.status;content=response.read(2*1024*1024+1);item['content_type']=response.headers.get_content_type()
+                  item['bytes_read']=len(content)
+                  if len(content)>2*1024*1024:
+                      item['result']='size_limit_exceeded';continue
+                  if b'<html' in content[:1024].lower() or b'<!doctype html' in content[:1024].lower():
+                      item['result']='html_instead_of_javascript';continue
+                  if item['content_type'] not in ['application/javascript','text/javascript','application/x-javascript','text/plain','application/octet-stream']:
+                      item['result']='unexpected_content_type';continue
+                  item['sha256']=hashlib.sha256(content).hexdigest();(rawdir/name).write_bytes(content)
+                  text=content.decode('utf-8',errors='replace');masked=literal.sub('\"[string]\"',text);masked=re.sub(r'/\*.*?\*/','[comment]',masked,flags=re.S);masked=re.sub(r'//[^\r\n]*','[comment]',masked)
+                  excerpts=[]
+                  for word in ['MediaInfo','LoadRequest','loadMedia','loadSource','initChromecast','customType','keyLoader']:
+                      matches=list(re.finditer(r'\b'+word+r'\b',masked));item[word+'_count']=len(matches)
+                      for match in matches[:2]:
+                          excerpt=masked[max(0,match.start()-450):match.end()+650];excerpt=re.sub(r'https?://[^\s\"<>]+','[url]',excerpt);excerpt=re.sub(r'[A-Za-z0-9_+-]{48,}','[long-token]',excerpt);excerpts.append({'term':word,'masked_code':excerpt})
+                  item['excerpts']=excerpts;item['result']='downloaded_not_executed'
+              except urllib.error.HTTPError as error:
+                  item.update(result='http_error',status=error.code)
+              except Exception as error:
+                  item.update(result='fetch_failed',error_type=type(error).__name__)
+          output=pathlib.Path('diagnostics/tvroom-static-report.json');output.parent.mkdir(exist_ok=True);output.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8');(rawdir/'report.json').write_bytes(output.read_bytes())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tvroom-static-source-investigation
+          path: static-investigation-artifact/
+          retention-days: 1
+      - name: Commit report only
+        run: |
+          git config user.name 'insid0909-max'
+          git config user.email '266083559+insid0909-max@users.noreply.github.com'
+          git add diagnostics/tvroom-static-report.json
+          git diff --cached --check
+          if ! git diff --cached --quiet; then
+            git commit -m 'Report isolated tvroom static source investigation [skip ci]'
+            git push origin HEAD:main
+          fi
