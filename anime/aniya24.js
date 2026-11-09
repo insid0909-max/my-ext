@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.1.5",
+    "version": "0.1.6",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/aniya24.js"
@@ -430,6 +430,7 @@ class DefaultExtension extends MProvider {
         const site = url.startsWith(base);
         // 사이트가 앱 통신에 보안 확인(Cloudflare)을 걸면 앱의 자동 통과가 실패함(2026-11-09 사용자 화면, 15.7초 뒤 "Failed to bypass Cloudflare")
         // → 숨은 웹뷰로 화면을 열어 내용을 받음(사용자가 웹뷰로 여는 것과 같음). 한 번 막히면 6시간은 웹뷰부터
+        this.webNote = "";
         if (site && webFirst()) {
             const w = await this.viaWebview(url);
             if (w) return w;
@@ -458,7 +459,7 @@ class DefaultExtension extends MProvider {
             setWebFirst();
             const w = await this.viaWebview(url);
             if (w) return w;
-            throw new Error(`${LABEL} 보안 확인을 통과하지 못했어요. 오른쪽 위 웹뷰(지구본)로 사이트를 한 번 열었다가 돌아와 다시 시도해 주세요.`);
+            throw new Error(`${LABEL} 보안 확인을 통과하지 못했어요. 오른쪽 위 웹뷰(지구본)로 사이트를 한 번 열었다가 돌아와 다시 시도해 주세요. [${this.webNote || "웹뷰 없음"}]`);
         }
         if (!res) throw new Error(`${LABEL} 접속 실패: ${lastErr.substring(0, 80)}`);
         if (res.statusCode === 404 && missingOk) return "";
@@ -476,6 +477,7 @@ class DefaultExtension extends MProvider {
             "function ok(h){return h&&h.indexOf('beeteam368')>=0&&h.indexOf('challenge-platform')<0;}" +
             "function f(){var h=document.documentElement.outerHTML;if(ok(h)){send(h);return true;}return false;}" +
             "if(f())return;var n=0;var t=setInterval(function(){if(done||f()){clearInterval(t);return;}n++;" +
+            "if(n>=40){send('NOTOK:'+document.title+' · '+document.documentElement.outerHTML.length+'자 · '+location.host);clearInterval(t);return;}" +
             "if(n%5===0&&window.fetch){fetch(location.href,{credentials:'include'}).then(function(r){return r.text();})" +
             ".then(function(h){if(ok(h)){clearInterval(t);send(h);}}).catch(function(){});}},300);})();";
         try {
@@ -484,6 +486,9 @@ class DefaultExtension extends MProvider {
                 evaluateJavascriptViaWebview(url, {}, [script]),
                 new Promise((r) => setTimeout(() => r(NONE), 14000)),
             ]);
+            if (res === NONE || !res) this.webNote = "웹뷰 응답 없음(14초)";
+            else if (String(res).startsWith("NOTOK:")) this.webNote = "웹뷰 화면: " + String(res).substring(6, 90);
+            else this.webNote = "";
             return res && res !== NONE && String(res).includes("beeteam368") ? String(res) : null;
         } catch (e) {
             return null;
@@ -563,9 +568,9 @@ class DefaultExtension extends MProvider {
         const path = this.listPath(idx, page);
         // 망가요미에는 clearTimeout 이 없음 → 늦음 표시는 값으로 돌려받아 판단
         const LATE = {};
-        const late = new Promise((r) => setTimeout(() => r(LATE), 30000));
+        const late = new Promise((r) => setTimeout(() => r(LATE), 36000));
         const html = await Promise.race([this.get(path, true), late]);
-        if (html === LATE) throw new Error(`${LABEL} 사이트 응답이 30초 넘게 없어요. 잠시 뒤 다시, 또는 웹뷰로 사이트를 한 번 열었다 와 주세요 [${path.substring(0, 60)}]`);
+        if (html === LATE) throw new Error(`${LABEL} 사이트 응답이 36초 넘게 없어요. 한 번 더 재시도해 주세요(두 번째부터는 웹뷰로 바로 받아요) [${path.substring(0, 50)}${this.webNote ? " · " + this.webNote : ""}]`);
         {
             const r = this.parseCards(html, page);
             if (!r.list.length && page === 1 && html) {
