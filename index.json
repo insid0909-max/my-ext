@@ -98,15 +98,15 @@
     "dateFormatLocale": "",
     "isNsfw": false,
     "hasCloudflare": false,
-    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.9",
+    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom_stock_test.js?v=0.0.10",
     "apiUrl": "",
-    "version": "0.0.9",
+    "version": "0.0.10",
     "isManga": false,
     "itemType": 1,
     "isFullData": false,
     "appMinVerReq": "0.5.0",
     "additionalParams": "",
     "sourceCodeLanguage": 1,
-    "notes": "진단 전용: HTML과 동일 호스트 JS 최대 2개에서 MediaInfo·LoadRequest·loadMedia·loadSource 호출후보의 단순 변수/속성 첫인자만 표시. 문자열·복합식 비표시. 정규식 검사로 실제 실행·값 동일성·서버경로 확정 불가. 키·영상·캐스트 API 미요청·JS 미실행. 결과창 후 재생중단. 기존 티비룸 유지."
+    "notes": "재생 비교시험: 0.0.3 기준으로 후속 강제중단 진단 제거, 반환 headers만 빈 객체로 변경. 프록시 생성 headers·키 처리 유지. 키 문제 해결 보장 아님. 기존 티비룸 변경 없음."
   }
 ]
