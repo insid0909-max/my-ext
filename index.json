@@ -89,7 +89,7 @@
   },
   {
     "name": "애니야24",
-    "id": 1720450905,
+    "id": 1720450906,
     "baseUrl": "https://www.aniya24.com",
     "lang": "ko",
     "typeSource": "single",
@@ -100,7 +100,7 @@
     "hasCloudflare": true,
     "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/aniya24.js",
     "apiUrl": "",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "isManga": false,
     "itemType": 1,
     "isFullData": false,
