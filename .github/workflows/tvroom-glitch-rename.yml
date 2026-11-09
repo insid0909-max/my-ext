@@ -1,0 +1,54 @@
+name: Rename TVRoom for Glitch
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/tvroom-glitch-rename.yml']
+permissions:
+  contents: write
+jobs:
+  rename:
+    if: github.event.head_commit.message == 'Prepare TVRoom Glitch-only rename 1.0.12'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update metadata only
+        run: |
+          python3 <<'PY'
+          import hashlib, json
+          from pathlib import Path
+          def blob(data):
+              return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+          source=Path('anime/tvroom.js')
+          index=Path('index.json')
+          original=source.read_bytes()
+          index_original=index.read_bytes()
+          assert blob(original)=='b4c101b4f0ec16f0cf6f0cd8a6deb5d8a743cbf1', 'Source changed; stop'
+          assert blob(index_original)=='cf4f5c79e7f1ccd471bcc351491306bf499250e3', 'Index changed; stop'
+          text=original.decode('utf-8')
+          old_name='id:1230463291,name:"티비룸"'
+          new_name='id:1230463291,name:"티비룸(글리치전용)"'
+          old_version='baseUrl:"https://tvroom46.org",version:"1.0.11"'
+          new_version='baseUrl:"https://tvroom46.org",version:"1.0.12"'
+          assert text.count(old_name)==1
+          assert text.count(old_version)==1
+          updated=text.replace(old_name,new_name).replace(old_version,new_version)
+          assert updated.replace(new_name,old_name).replace(new_version,old_version)==text
+          rows=json.loads(index_original)
+          targets=[r for r in rows if r.get('id')==1230463291]
+          assert len(targets)==1
+          row=targets[0]
+          assert row['name']=='티비룸' and row['version']=='1.0.11'
+          row['name']='티비룸(글리치전용)'
+          row['version']='1.0.12'
+          row['sourceCodeUrl']='https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom.js?v=1.0.12'
+          row['notes']='Mangayomi Glitch 전용. 순정 Mangayomi에서는 재생을 지원하지 않습니다.'
+          source.write_bytes(updated.encode('utf-8'))
+          index.write_text(json.dumps(rows,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+          PY
+          node --check anime/tvroom.js
+          git diff --check
+          git config user.name 'insid0909-max'
+          git config user.email '266083559+insid0909-max@users.noreply.github.com'
+          git add anime/tvroom.js index.json
+          git commit -m 'Rename TVRoom to 티비룸(글리치전용) 1.0.12 [skip ci]'
+          git push origin HEAD:main
