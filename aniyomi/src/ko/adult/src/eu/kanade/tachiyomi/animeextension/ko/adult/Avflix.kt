@@ -256,6 +256,13 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
         return ms to m.groupValues[1]
     }
 
+    /** 제목 뒤 배지(노모·자막) 중 "자막" 이면 한글 자막 (한국 사이트, 자막이 영상에 입혀져 있음) */
+    private fun subbed(data: String): Boolean {
+        val at = data.indexOf("\"avIdx\":")
+        if (at < 0) return false
+        return CHILDREN_REGEX.findAll(data, at).take(4).any { it.groupValues[1] == "자막" }
+    }
+
     override fun animeDetailsParse(response: Response): SAnime {
         val (ms, year) = dateMs(response)
         val html = response.body.string()
@@ -293,7 +300,7 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
             genre = keywords.drop(1).joinToString(", ").ifEmpty { null }
             status = SAnime.COMPLETED
             update_strategy = AnimeUpdateStrategy.ONLY_FETCH_ONCE
-            description = listOf(info, meta("description")).filter { it.isNotEmpty() }.joinToString("\n\n")
+            description = listOfNotNull(if (subbed(data)) "💬 한글 자막 있음" else null, info, meta("description")).filter { it.isNotEmpty() }.joinToString("\n\n")
         }
     }
 
@@ -302,12 +309,14 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
 
     override fun episodeListParse(response: Response): List<SEpisode> {
         val (ms, _) = dateMs(response)
+        val sub = subbed(flight(response.body.string()))
         return listOf(
             SEpisode.create().apply {
                 url = response.request.url.encodedPath
                 name = if (ms > 0) "본편 (${ymd(ms)})" else "본편"
                 episode_number = 1f
                 date_upload = ms
+                if (sub) scanlator = "한글자막"
             },
         )
     }
