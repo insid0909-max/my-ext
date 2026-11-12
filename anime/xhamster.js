@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.0.6",
+    "version": "0.0.7",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/xhamster.js"
@@ -113,6 +113,12 @@ function lastPage(o) {
     };
     walk(o, 0);
     return n;
+}
+
+/** 자막 목록 (xplayerPluginSettings.subtitles.tracks: label·urls.vtt·lang) */
+function subTracks(data) {
+    const t = ((((data || {}).xplayerPluginSettings || {}).subtitles || {}).tracks) || [];
+    return Array.isArray(t) ? t.filter((x) => x && x.lang && x.urls && x.urls.vtt) : [];
 }
 
 function hms(sec) {
@@ -569,6 +575,11 @@ class DefaultExtension extends MProvider {
         const author = (vm.channelModel && vm.channelModel.channelName) || (vm.author && vm.author.name) || "";
         const ms = created ? created * 1000 : 0;
         const r = ve.rating || {};
+        // 자막: 한국어가 있으면 설명 맨 위와 회차 번역팀 칸에 표시 (사이트 자동 번역 자막이 많음)
+        const subs = subTracks(data);
+        const ko = subs.find((x) => x.lang === "ko");
+        const auto = ko && (ko.isOriginal === false || /auto/i.test(String(ko.label || "")));
+        const subLine = ko ? `💬 한국어 자막 있음${auto ? " (사이트 자동 번역)" : ""}\n` : subs.length ? `💬 한국어 자막 없음 (다른 언어 ${subs.length}개)\n` : "";
         const info = [
             ve.duration ? `길이 ${hms(ve.duration)}` : "",
             ve.maxResolution ? `최대 ${ve.maxResolution}` : "",
@@ -584,9 +595,9 @@ class DefaultExtension extends MProvider {
             author,
             genre: tags,
             status: 1,
-            description: `${info}\n\n${String(ve.description || "").trim()}`.trim(),
+            description: `${subLine}${info}\n\n${String(ve.description || "").trim()}`.trim(),
             link: url,
-            episodes: [{ name: ms ? `1 재생 (${ymd(ms)})` : "1 재생", url: url.split("#")[0], dateUpload: String(ms || Date.now()) }],
+            episodes: [{ name: ms ? `1 재생 (${ymd(ms)})` : "1 재생", url: url.split("#")[0], dateUpload: String(ms || Date.now()), scanlator: ko ? (auto ? "한글자막 (자동 번역)" : "한글자막") : "" }],
         };
     }
 
@@ -634,7 +645,19 @@ class DefaultExtension extends MProvider {
             }
         }
         if (!out.length) throw new Error("영상 주소를 못 찾았어요 [화면에 영상 주소 없음 · 웹뷰에서도 못 찾음]");
-        return hlsHint(qualitySort("xh_quality", out));
+        // 한국어 자막: 주소 끝이 ".vtt.v숫자" 라 재생기가 형식을 못 알아볼 수 있어 글자로 받아 넘김 (티비위키와 같은 방법)
+        const subtitles = [];
+        const ko = subTracks(initials(html)).find((x) => x.lang === "ko");
+        if (ko) {
+            try {
+                const r = await this.client.get(String(ko.urls.vtt), {});
+                const t = String(r.body || "");
+                if (r.statusCode === 200 && /^\s*WEBVTT/.test(t)) subtitles.push({ file: t, label: "한국어 (자동 번역)" });
+            } catch (e) {
+                // 자막 없이 재생
+            }
+        }
+        return hlsHint(qualitySort("xh_quality", out.map((v) => Object.assign(v, { subtitles, audios: [] }))));
     }
 
     /** 화질 묶음 목록(m3u8) → H.264(열리면 자동+화질별) + AV1, 144p 는 뺌 */
