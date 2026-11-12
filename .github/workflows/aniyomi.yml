@@ -1,0 +1,103 @@
+name: aniyomi
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'aniyomi/**'
+      - '.github/workflows/aniyomi.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: aniyomi
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+
+      - name: Build-Tools
+        run: echo "$ANDROID_HOME/build-tools/34.0.0" >> $GITHUB_PATH
+
+      - uses: gradle/actions/setup-gradle@v3
+
+      - name: Signing fingerprint
+        run: |
+          SIGNING_KEY=$(keytool -list -v -keystore signingkey.jks -alias aniyomikey -storepass "aniyomi123" | grep "SHA256:" | awk '{print $2}' | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          echo "SIGNING_KEY=$SIGNING_KEY" >> $GITHUB_ENV
+
+      # 버전 번호: aniyomi 폴더를 바꾼 커밋 수 + 9300 (예전 배포 9255 보다 커야 업데이트로 보임)
+      - name: Version
+        run: |
+          v=$((9300 + $(git rev-list --count --first-parent HEAD -- .)))
+          echo "VCODE=$v" >> $GITHUB_ENV
+          for f in src/*/*/build.gradle.kts; do
+            sed -i -E "s/val extCode\s*=\s*[0-9]+/val extCode = $v/g" "$f"
+            sed -i -E "s/set\(\"extVersionCode\".*\)/set\(\"extVersionCode\", $v\)/" "$f"
+          done
+          echo "version $v"
+
+      - name: Build
+        run: |
+          tasks=$(for d in src/*/*/; do echo ":$(echo ${d%/} | tr '/' ':'):assembleRelease"; done)
+          ./gradlew $tasks -x lintKotlin -x lint \
+            -Pandroid.injected.signing.store.file="$PWD/signingkey.jks" \
+            -Pandroid.injected.signing.store.password="aniyomi123" \
+            -Pandroid.injected.signing.key.alias="aniyomikey" \
+            -Pandroid.injected.signing.key.password="aniyomi123"
+
+      - name: Index
+        run: |
+          python3 - << 'EOF'
+          import os, glob, subprocess, json, shutil
+          out = "../out"
+          os.makedirs(out + "/apk", exist_ok=True)
+          os.makedirs(out + "/icon", exist_ok=True)
+          meta = {"meta": {"name": "my-ext", "shortName": "my-ext", "website": "https://github.com/insid0909-max/my-ext",
+                           "signingKeyFingerprint": os.environ.get("SIGNING_KEY", "")}}
+          json.dump(meta, open(out + "/repo.json", "w"), ensure_ascii=False, indent=2)
+          exts = []
+          for apk in glob.glob("src/**/build/outputs/apk/release/*.apk", recursive=True):
+              b = subprocess.check_output(["aapt", "dump", "badging", apk]).decode("utf-8", "ignore")
+              pkg = vcode = vname = label = icon = None
+              for line in b.splitlines():
+                  if line.startswith("package:"):
+                      for part in line.split():
+                          if part.startswith("name='"): pkg = part.split("'")[1]
+                          elif part.startswith("versionCode='"): vcode = int(part.split("'")[1])
+                          elif part.startswith("versionName='"): vname = part.split("'")[1]
+                  elif line.startswith("application-label:"):
+                      label = line.split("'")[1]
+                  if "application-icon-" in line or "icon='" in line:
+                      icon = line.split("'")[-2]
+              if not (pkg and vcode and vname):
+                  continue
+              name = f"aniyomi-{pkg}-v{vname}-release.apk"
+              shutil.copy(apk, f"{out}/apk/{name}")
+              if icon:
+                  subprocess.run(f"unzip -p '{apk}' '{icon}' > '{out}/icon/{pkg}.png'", shell=True)
+              label = (label or "Extension").replace("Aniyomi: ", "")
+              exts.append({"name": "Aniyomi: " + label, "pkg": pkg, "apk": name, "lang": "ko", "code": vcode,
+                           "version": vname, "nsfw": 1, "hasReadme": 0, "hasChangelog": 0,
+                           "sources": [{"name": label, "lang": "ko", "id": "0", "baseUrl": "", "versionId": 1}]})
+          json.dump(exts, open(out + "/index.min.json", "w"), ensure_ascii=False, separators=(",", ":"))
+          print(len(exts), "extensions")
+          EOF
+
+      - uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./out
+          publish_branch: aniyomi
