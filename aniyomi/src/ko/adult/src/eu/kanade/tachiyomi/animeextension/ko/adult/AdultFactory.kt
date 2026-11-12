@@ -11,7 +11,7 @@ import okhttp3.Request
 import okhttp3.Response
 
 /**
- * 성인 전용 확장 묶음 (2026-11-09, 사용자 요청: 개인 저장소 my-ext 의 망가요미 확장 3개를 애니요미로).
+ * 확장 묶음 (개인 저장소에서 빌드).
  * 애니요미는 성인 표시를 APK 단위로 붙여서 TVroom 과 따로 둠.
  */
 class AdultFactory : AnimeSourceFactory {
@@ -31,6 +31,11 @@ class AdultFactory : AnimeSourceFactory {
             list.add(Avflix())
         } catch (e: Throwable) {
             list.add(ErrorSource("AVFLIX 오류", e))
+        }
+        try {
+            list.add(XVideos())
+        } catch (e: Throwable) {
+            list.add(ErrorSource("xVideos 오류", e))
         }
         return list
     }

@@ -12,6 +12,7 @@ import eu.kanade.tachiyomi.animesource.model.AnimeUpdateStrategy
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
+import eu.kanade.tachiyomi.animesource.model.Track
 import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.animesource.online.AnimeHttpSource
 import eu.kanade.tachiyomi.network.GET
@@ -189,6 +190,21 @@ class XHamster : AnimeHttpSource(), ConfigurableAnimeSource {
         return parseList(response)
     }
 
+    /** 한국어 자막 (xplayerPluginSettings.subtitles.tracks 중 lang ko) → (vtt 주소, 자동 번역인지) */
+    private fun koSub(data: JSONObject?): Pair<String, Boolean>? {
+        val tracks = data?.optJSONObject("xplayerPluginSettings")?.optJSONObject("subtitles")?.optJSONArray("tracks") ?: return null
+        for (i in 0 until tracks.length()) {
+            val t = tracks.optJSONObject(i) ?: continue
+            if (t.optString("lang") != "ko") continue
+            val vtt = t.optJSONObject("urls")?.optString("vtt").orEmpty()
+            if (vtt.startsWith("http")) return vtt to (!t.optBoolean("isOriginal", true) || t.optString("label").contains("auto", true))
+        }
+        return null
+    }
+
+    private fun subCount(data: JSONObject?): Int =
+        data?.optJSONObject("xplayerPluginSettings")?.optJSONObject("subtitles")?.optJSONArray("tracks")?.length() ?: 0
+
     /** 화면 안의 window.initials JSON */
     private fun initials(html: String): JSONObject? {
         val i = html.indexOf("window.initials=")
@@ -288,7 +304,14 @@ class XHamster : AnimeHttpSource(), ConfigurableAnimeSource {
             genre = tags.joinToString(", ").ifEmpty { null }
             status = SAnime.COMPLETED
             update_strategy = AnimeUpdateStrategy.ONLY_FETCH_ONCE
-            description = listOf(info, ve.optString("description").trim()).filter { it.isNotEmpty() }.joinToString("\n\n")
+            val ko = koSub(data)
+            val n = subCount(data)
+            val subLine = when {
+                ko != null -> "💬 한국어 자막 있음" + if (ko.second) " (사이트 자동 번역)" else ""
+                n > 0 -> "💬 한국어 자막 없음 (다른 언어 ${n}개)"
+                else -> ""
+            }
+            description = listOf(subLine, info, ve.optString("description").trim()).filter { it.isNotEmpty() }.joinToString("\n\n")
         }
     }
 
@@ -298,12 +321,14 @@ class XHamster : AnimeHttpSource(), ConfigurableAnimeSource {
     override fun episodeListParse(response: Response): List<SEpisode> {
         val created = CREATED_FRAG.find(response.request.url.fragment?.let { "#$it" }.orEmpty())?.groupValues?.get(1)?.toLongOrNull() ?: 0L
         val ms = created * 1000
+        val ko = koSub(runCatching { initials(response.body.string()) }.getOrNull())
         return listOf(
             SEpisode.create().apply {
                 url = response.request.url.encodedPath
                 name = if (ms > 0) "본편 (${ymd(ms)})" else "본편"
                 episode_number = 1f
                 date_upload = ms
+                if (ko != null) scanlator = if (ko.second) "한글자막 (자동 번역)" else "한글자막"
             },
         )
     }
@@ -341,6 +366,13 @@ class XHamster : AnimeHttpSource(), ConfigurableAnimeSource {
             r.hits.firstOrNull()?.let { out.addAll(fromHls(it.url, headers, " (웹뷰)")) }
         }
         if (out.isEmpty()) throw Exception("영상 주소를 못 찾았어요 [화면에 영상 주소 없음 · 웹뷰에서도 못 찾음]")
+        // 한국어 자막이 있으면 영상마다 붙임
+        koSub(runCatching { initials(html) }.getOrNull())?.let { (vtt, auto) ->
+            val subs = listOf(Track(vtt, if (auto) "한국어 (자동 번역)" else "한국어"))
+            val withSubs = out.map { Video(it.url, it.quality, it.videoUrl, it.headers, subs) }
+            out.clear()
+            out.addAll(withSubs)
+        }
         // 선호 화질이 "자동"(기본값)이면 가장 높은 화질을 맨 앞에 — 재생기가 "자동"(화질 묶음)은 모든 화질 목록을 먼저 열어 봐서 느림
         // (2026-11-09 사용자: 자동 10초 → 1080p 7초). "자동" 은 목록 뒤에 남김
         val sorted = HlsQuality.sort(prefs(), out)

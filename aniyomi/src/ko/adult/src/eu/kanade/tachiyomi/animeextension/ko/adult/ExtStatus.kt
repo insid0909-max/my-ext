@@ -22,7 +22,7 @@ internal object ExtStatus {
         "https://raw.githubusercontent.com/insid0909-max/aniyomi-extensions/monitor-state/status.json"
     private const val PREF_JSON = "status_json"
     private const val NOTES_URL =
-        "https://raw.githubusercontent.com/insid0909-max/aniyomi-extensions/master/changelog.json"
+        "https://raw.githubusercontent.com/insid0909-max/my-ext/main/changelog.json"
     private const val PREF_NOTES = "notes_json"
     private const val REFRESH_MS = 20 * 60 * 1000L
 
