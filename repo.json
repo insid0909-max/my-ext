@@ -1,0 +1,8 @@
+{
+  "meta": {
+    "name": "my-ext",
+    "shortName": "my-ext",
+    "website": "https://github.com/insid0909-max/my-ext",
+    "signingKeyFingerprint": "8e41eebe12476766862491949ce1ec202f3a03afed6608dedf9474d2bd3fe45e"
+  }
+}
