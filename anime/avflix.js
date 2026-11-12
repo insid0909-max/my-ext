@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.0.1",
+    "version": "0.0.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/avflix.js"
@@ -539,6 +539,8 @@ class DefaultExtension extends MProvider {
             const i = texts.indexOf(label);
             return i >= 0 && i + 1 < texts.length ? texts[i + 1] : "";
         };
+        // 제목 뒤 배지(노모·자막) 중 "자막" 이면 한글 자막 (한국 사이트)
+        const subbed = texts.slice(0, 4).includes("자막");
         const length = texts.find((t) => /^\d+시간(?: \d+분)?$|^\d+분$/.test(t)) || "";
         const cast = after("출연진");
         const maker = after("제작사");
@@ -560,9 +562,9 @@ class DefaultExtension extends MProvider {
             artist: cast,
             genre: keywords.slice(1),
             status: 1,
-            description: `${info}\n\n${meta("description")}`.trim(),
+            description: `${subbed ? "💬 한글 자막 있음\n" : ""}${info}\n\n${meta("description")}`.trim(),
             link: url,
-            episodes: [{ name: ms ? `1 재생 (${ymd(ms)})` : "1 재생", url: clean, dateUpload: String(ms || Date.now()) }],
+            episodes: [{ name: ms ? `1 재생 (${ymd(ms)})` : "1 재생", url: clean, dateUpload: String(ms || Date.now()), scanlator: subbed ? "한글자막" : "" }],
         };
     }
 

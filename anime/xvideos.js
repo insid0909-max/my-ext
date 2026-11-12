@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.0.1",
+    "version": "0.0.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/xvideos.js"
@@ -80,6 +80,34 @@ function isoDur(s) {
     const mi = Number(m[2] || 0);
     const se = Number(m[3] || 0);
     return (h ? `${h}:${String(mi).padStart(2, "0")}` : `${mi}`) + `:${String(se).padStart(2, "0")}`;
+}
+
+// 화면 글자 안 html5player.setSubtitles('기본', [{"l":"ko","n":"Korean","f":"…vtt"}, …]) → 자막 목록
+function subsOf(html) {
+    const i = html.indexOf("setSubtitles(");
+    if (i < 0) return [];
+    const a = html.indexOf("[", i);
+    if (a < 0) return [];
+    let depth = 0;
+    let inStr = false;
+    for (let k = a; k < html.length && k < a + 20000; k++) {
+        const ch = html[k];
+        if (inStr) {
+            if (ch === "\\") k++;
+            else if (ch === "\"") inStr = false;
+            continue;
+        }
+        if (ch === "\"") inStr = true;
+        else if (ch === "[") depth++;
+        else if (ch === "]" && --depth === 0) {
+            try {
+                return JSON.parse(html.substring(a, k + 1)).filter((x) => x && x.l && x.f);
+            } catch (e) {
+                return [];
+            }
+        }
+    }
+    return [];
 }
 
 let lastSiteRequest = 0;
@@ -415,15 +443,19 @@ class DefaultExtension extends MProvider {
         const info = [dur ? `길이 ${dur}` : "", hd, views ? `조회 ${count(views)}` : "", ms ? `올린 날 ${ymd(ms)}` : ""]
             .filter((x) => x).join(" · ");
         const people = names.length > 1 ? `\n출연: ${Array.from(new Set(names.slice(1))).join(", ")}` : "";
+        // 자막: 한국어가 있으면 설명 맨 위와 회차 번역팀 칸에 표시 (사이트 자막은 자동 번역일 수 있음)
+        const subs = subsOf(html);
+        const ko = subs.some((x) => x.l === "ko");
+        const subLine = ko ? "💬 한국어 자막 있음 (사이트 자동 번역일 수 있음)\n" : subs.length ? `💬 한국어 자막 없음 (다른 언어 ${subs.length}개)\n` : "";
         return {
             name: ms && name && !/\(\d{4}\)$/.test(name) ? `${name} (${ymd(ms).substring(0, 4)})` : name,
             imageUrl: img,
             author,
             genre: Array.from(new Set(tags)),
             status: 1,
-            description: `${info}${people}`.trim(),
+            description: `${subLine}${info}${people}`.trim(),
             link: url,
-            episodes: [{ name: ms ? `1. 본편 (${ymd(ms)})` : "1. 본편", url, dateUpload: String(ms || Date.now()) }],
+            episodes: [{ name: ms ? `1. 본편 (${ymd(ms)})` : "1. 본편", url, dateUpload: String(ms || Date.now()), scanlator: ko ? "한글자막" : "" }],
         };
     }
 
@@ -449,7 +481,11 @@ class DefaultExtension extends MProvider {
             const shape = url.replace(/^https?:\/\//, "").substring(0, 48);
             throw new Error(`영상 주소를 못 찾았어요 [재생 · ${why || "화면에 영상 주소 없음"} · ${shape}]`);
         }
-        return qualitySort("xv_quality", out);
+        // 자막: 한국어 먼저, 그다음 영어
+        const subs = subsOf(html);
+        const pickSub = (l, label) => subs.filter((x) => x.l === l).map((x) => ({ file: unesc(x.f), label }));
+        const subtitles = pickSub("ko", "한국어").concat(pickSub("en", "영어"));
+        return qualitySort("xv_quality", out.map((v) => Object.assign(v, { subtitles, audios: [] })));
     }
 
     // ================= 필터 · 설정 =================
