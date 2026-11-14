@@ -7,8 +7,8 @@ const mangayomiSources = [{
     "typeSource": "single",
     "itemType": 1,
     "isNsfw": true,
-    "hasCloudflare": true,
-    "version": "0.1.9",
+    "hasCloudflare": false,
+    "version": "0.1.10",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/aniya24.js"
@@ -71,11 +71,15 @@ function setWebFirst() {
 let lastSiteRequest = 0;
 // ---------- 보안 확인 기록 · 목록 5분 기억 (2026-11-14, 사용자 "들어갈 때마다 보안 확인·목록 느림") ----------
 // 통과가 얼마나 유지되는지는 사이트가 정함(확장이 늘릴 수 없음) → 같은 목록은 5분 기억, 필터 🛡 줄에 숫자로 남김
+const CF_MEM = {};
 function cfPref(k, v) {
     try {
-        const p = new SharedPreferences();
-        if (v === undefined) return p.getString(k, "") || "";
-        p.setString(k, String(v));
+        if (v === undefined) {
+            if (k in CF_MEM) return CF_MEM[k];
+            return new SharedPreferences().getString(k, "") || "";
+        }
+        CF_MEM[k] = String(v);
+        new SharedPreferences().setString(k, String(v));
     } catch (e) {
         // 기록 못 해도 동작엔 영향 없음
     }
@@ -120,10 +124,12 @@ function cfLine() {
     const pass = Number(cfPref("aniya24_cf_pass")) || 0;
     const kept = cfPref("aniya24_cf_kept");
     const last = cfPref("aniya24_last_list");
+    const lastCf = cfPref("aniya24_last_cf_list");
     const z = (n) => String(n).padStart(2, "0");
     const d = new Date(pass + 9 * 3600000);
     const parts = [pass ? `마지막 통과 ${z(d.getUTCMonth() + 1)}.${z(d.getUTCDate())} ${z(d.getUTCHours())}:${z(d.getUTCMinutes())}` : "통과 기록 없음"];
     if (kept !== "") parts.push(`이전 통과 유지 약 ${kept}분`);
+    if (lastCf) parts.push("보안 확인 거친 목록 " + lastCf);
     if (last) parts.push("마지막 목록 " + last);
     return "🛡 보안 확인: " + parts.join(" · ");
 }
@@ -642,7 +648,9 @@ class DefaultExtension extends MProvider {
             return kept;
         }
         const r = await this.listPageInner(path, page, t0);
-        cfPref("aniya24_last_list", `${((Date.now() - t0) / 1000).toFixed(1)}초 (${this.how || "바로"})`);
+        const took = `${((Date.now() - t0) / 1000).toFixed(1)}초 (${this.how || "바로"})`;
+        cfPref("aniya24_last_list", took);
+        if (/보안 확인/.test(this.how || "")) cfPref("aniya24_last_cf_list", took);
         listCachePut(path, r);
         return r;
     }
