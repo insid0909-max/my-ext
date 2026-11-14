@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.1.8",
+    "version": "0.1.9",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/aniya24.js"
@@ -69,6 +69,65 @@ function setWebFirst() {
 }
 
 let lastSiteRequest = 0;
+// ---------- 보안 확인 기록 · 목록 5분 기억 (2026-11-14, 사용자 "들어갈 때마다 보안 확인·목록 느림") ----------
+// 통과가 얼마나 유지되는지는 사이트가 정함(확장이 늘릴 수 없음) → 같은 목록은 5분 기억, 필터 🛡 줄에 숫자로 남김
+function cfPref(k, v) {
+    try {
+        const p = new SharedPreferences();
+        if (v === undefined) return p.getString(k, "") || "";
+        p.setString(k, String(v));
+    } catch (e) {
+        // 기록 못 해도 동작엔 영향 없음
+    }
+    return "";
+}
+function cfChallenge() {
+    if (cfPref("aniya24_cf_wait") === "1") return;
+    const pass = Number(cfPref("aniya24_cf_pass")) || 0;
+    cfPref("aniya24_cf_kept", pass ? String(Math.floor((Date.now() - pass) / 60000)) : "");
+    cfPref("aniya24_cf_wait", "1");
+}
+function cfPassed() {
+    if (cfPref("aniya24_cf_wait") !== "1") return;
+    cfPref("aniya24_cf_wait", "0");
+    cfPref("aniya24_cf_pass", String(Date.now()));
+}
+function listCacheGet(key) {
+    try {
+        const all = JSON.parse(cfPref("aniya24_lc") || "{}");
+        const e = all[key];
+        if (e && Date.now() - e.t < 5 * 60000) return e.r;
+    } catch (e) {
+        // 없음
+    }
+    return null;
+}
+function listCachePut(key, r) {
+    if (!r || !r.list || !r.list.length) return;
+    try {
+        const all = JSON.parse(cfPref("aniya24_lc") || "{}");
+        const now = Date.now();
+        for (const k of Object.keys(all)) if (now - all[k].t >= 5 * 60000) delete all[k];
+        const keys = Object.keys(all);
+        if (keys.length >= 20) delete all[keys[0]];
+        all[key] = { t: now, r };
+        cfPref("aniya24_lc", JSON.stringify(all));
+    } catch (e) {
+        // 기억 못 해도 동작엔 영향 없음
+    }
+}
+function cfLine() {
+    const pass = Number(cfPref("aniya24_cf_pass")) || 0;
+    const kept = cfPref("aniya24_cf_kept");
+    const last = cfPref("aniya24_last_list");
+    const z = (n) => String(n).padStart(2, "0");
+    const d = new Date(pass + 9 * 3600000);
+    const parts = [pass ? `마지막 통과 ${z(d.getUTCMonth() + 1)}.${z(d.getUTCDate())} ${z(d.getUTCHours())}:${z(d.getUTCMinutes())}` : "통과 기록 없음"];
+    if (kept !== "") parts.push(`이전 통과 유지 약 ${kept}분`);
+    if (last) parts.push("마지막 목록 " + last);
+    return "🛡 보안 확인: " + parts.join(" · ");
+}
+
 async function siteWait() {
     const wait = lastSiteRequest + 300 - Date.now();
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
@@ -431,9 +490,14 @@ class DefaultExtension extends MProvider {
         // 사이트가 앱 통신에 보안 확인(Cloudflare)을 걸면 앱의 자동 통과가 실패함(2026-11-09 사용자 화면, 15.7초 뒤 "Failed to bypass Cloudflare")
         // → 숨은 웹뷰로 화면을 열어 내용을 받음(사용자가 웹뷰로 여는 것과 같음). 한 번 막히면 6시간은 웹뷰부터
         this.webNote = "";
+        this.how = "바로";
         if (site && webFirst()) {
             const w = await this.viaWebview(url);
-            if (w) return w;
+            if (w) {
+                this.how = "웹뷰";
+                cfPassed();
+                return w;
+            }
         }
         const h = this.getHeaders(url);
         let res = null;
@@ -456,14 +520,20 @@ class DefaultExtension extends MProvider {
         const body = res ? String(res.body || "") : "";
         if (res && (res.statusCode === 403 || res.statusCode === 503) && /Just a moment|cf-chl|challenge-platform/i.test(body)) cf = true;
         if (cf && site) {
+            cfChallenge();
             setWebFirst();
             const w = await this.viaWebview(url);
-            if (w) return w;
+            if (w) {
+                this.how = "보안 확인 → 웹뷰";
+                cfPassed();
+                return w;
+            }
             throw new Error(`${LABEL} 보안 확인을 통과하지 못했어요. 오른쪽 위 웹뷰(지구본)로 사이트를 한 번 열었다가 돌아와 다시 시도해 주세요. [${this.webNote || "웹뷰 없음"}]`);
         }
         if (!res) throw new Error(`${LABEL} 접속 실패: ${lastErr.substring(0, 80)}`);
         if (res.statusCode === 404 && missingOk) return "";
         if (res.statusCode >= 400) throw new Error(`${LABEL} 접속 실패 (HTTP ${res.statusCode}). 주소가 바뀌었으면 설정에서 새 주소를 넣어 주세요.`);
+        if (site) cfPassed();
         return body;
     }
 
@@ -566,6 +636,18 @@ class DefaultExtension extends MProvider {
     async listPage(idx, page) {
         const t0 = Date.now();
         const path = this.listPath(idx, page);
+        const kept = listCacheGet(path);
+        if (kept) {
+            cfPref("aniya24_last_list", `${((Date.now() - t0) / 1000).toFixed(1)}초 (기억)`);
+            return kept;
+        }
+        const r = await this.listPageInner(path, page, t0);
+        cfPref("aniya24_last_list", `${((Date.now() - t0) / 1000).toFixed(1)}초 (${this.how || "바로"})`);
+        listCachePut(path, r);
+        return r;
+    }
+
+    async listPageInner(path, page, t0) {
         // 망가요미에는 clearTimeout 이 없음 → 늦음 표시는 값으로 돌려받아 판단
         const LATE = {};
         const late = new Promise((r) => setTimeout(() => r(LATE), 36000));
@@ -823,6 +905,7 @@ class DefaultExtension extends MProvider {
         const host = this.getBaseUrl().replace(/^https?:\/\//, "");
         return [
             { type_name: "HeaderFilter", name: `📡 주소: ${host}` },
+            { type_name: "HeaderFilter", name: cfLine() },
             ...notesFilters(KEY),
             { type_name: "SeparatorFilter" },
             { type_name: "HeaderFilter", name: "검색어가 없을 때만 적용 (작품 주소를 붙여 넣으면 바로 열기)" },
