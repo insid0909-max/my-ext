@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.1.11",
+    "version": "0.1.12",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/aniya24.js"
@@ -515,14 +515,8 @@ class DefaultExtension extends MProvider {
         this.webNote = "";
         this.how = "바로";
         NET_TRACE = [];
-        if (site && webFirst()) {
-            const w = await this.viaWebview(url);
-            if (w) {
-                this.how = "웹뷰";
-                cfPassed();
-                return w;
-            }
-        }
+        // 0.1.12: "6시간 웹뷰부터" 를 뺌 — 사용자 화면 "마지막 목록 10.1초 (웹뷰)": 통과 표시가 살아 있어도 매번 웹뷰(10초).
+        // 바로 받기를 먼저 하되 6초 넘게 답이 없으면 기다리지 않고 웹뷰로 (보안 확인은 앱이 가로채지 않아 바로 403 이 옴)
         const h = this.getHeaders(url);
         let res = null;
         let cf = false;
@@ -530,7 +524,18 @@ class DefaultExtension extends MProvider {
         for (let attempt = 0; attempt < 2 && !res; attempt++) {
             if (site) await siteWait();
             try {
-                res = await this.client.get(url, h);
+                if (site) {
+                    const SLOW = {};
+                    const r = await Promise.race([this.client.get(url, h), new Promise((ok) => setTimeout(() => ok(SLOW), 6000))]);
+                    if (r === SLOW) {
+                        NET_TRACE.push("6초 넘게 응답 없음 → 웹뷰");
+                        cf = true;
+                        break;
+                    }
+                    res = r;
+                } else {
+                    res = await this.client.get(url, h);
+                }
             } catch (e) {
                 lastErr = String((e && e.message) || e);
                 if (/cloudflare/i.test(lastErr)) {
@@ -544,11 +549,11 @@ class DefaultExtension extends MProvider {
         const body = res ? String(res.body || "") : "";
         if (res && (res.statusCode === 403 || res.statusCode === 503) && /Just a moment|cf-chl|challenge-platform/i.test(body)) cf = true;
         if (cf && site) {
-            cfChallenge();
+            if (res) cfChallenge();
             setWebFirst();
             const w = await this.viaWebview(url);
             if (w) {
-                this.how = "보안 확인 → 웹뷰";
+                this.how = res ? "보안 확인 → 웹뷰" : "느림 → 웹뷰";
                 cfPassed();
                 return w;
             }
