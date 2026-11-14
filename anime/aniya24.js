@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.1.10",
+    "version": "0.1.11",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/aniya24.js"
@@ -131,7 +131,8 @@ function cfLine() {
     if (kept !== "") parts.push(`이전 통과 유지 약 ${kept}분`);
     if (lastCf) parts.push("보안 확인 거친 목록 " + lastCf);
     if (last) parts.push("마지막 목록 " + last);
-    return "🛡 보안 확인: " + parts.join(" · ");
+    const tr = cfPref("aniya24_last_trace");
+    return "🛡 보안 확인: " + parts.join(" · ") + (tr ? ` [${tr}]` : "");
 }
 
 async function siteWait() {
@@ -375,6 +376,21 @@ function dnsFriendly(e, url) {
     return new Error("사이트 주소를 찾지 못했어요. ① 잠시 뒤 다시 ② 앱을 완전히 껐다 켜기 ③ 유니콘 등 DNS 앱을 쓰면 DNS 를 Google 로 ④ 주소가 바뀌었으면 검색창에 새 주소 붙여 넣기" + (host ? ` [${host}]` : ""));
 }
 
+// 0.1.11: 시도별 시간·결과 기록 (사용자 화면 "마지막 목록 33.9초 (바로)" — 보안 확인 없이 느린 이유 찾기, 🛡 줄에 표시)
+let NET_TRACE = [];
+async function traced(label, fn) {
+    const t0 = Date.now();
+    try {
+        const r = await fn();
+        NET_TRACE.push(`${label} ${((Date.now() - t0) / 1000).toFixed(1)}초 ${r && r.statusCode ? r.statusCode : "?"}`);
+        return r;
+    } catch (e) {
+        const m = String((e && e.message) || e).replace(/\s+/g, " ").substring(0, 40);
+        NET_TRACE.push(`${label} ${((Date.now() - t0) / 1000).toFixed(1)}초 실패(${m})`);
+        throw e;
+    }
+}
+
 function appClient(raw) {
     const media = /\.(?:m3u8|mp4|ts|m4s|jpe?g|png|webp|gif|avif)(?:[?#]|$)/i;
     const fallbackUa = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
@@ -400,7 +416,8 @@ function appClient(raw) {
         }
         return APP_ALT;
     };
-    const send = async (call, url, headers) => {
+    const send = async (call0, url, headers) => {
+        const call = (c, u, h) => traced(c === raw ? (h && Object.keys(h).some((k) => k.toLowerCase() === "user-agent") ? "기본+UA" : "기본") : "별도", () => call0(c, u, h));
         if (APP_NO_UA || media.test(String(url || ""))) {
             try {
                 return await call(raw, url, APP_NO_UA ? withUa(headers) : headers || {});
@@ -497,6 +514,7 @@ class DefaultExtension extends MProvider {
         // → 숨은 웹뷰로 화면을 열어 내용을 받음(사용자가 웹뷰로 여는 것과 같음). 한 번 막히면 6시간은 웹뷰부터
         this.webNote = "";
         this.how = "바로";
+        NET_TRACE = [];
         if (site && webFirst()) {
             const w = await this.viaWebview(url);
             if (w) {
@@ -650,6 +668,7 @@ class DefaultExtension extends MProvider {
         const r = await this.listPageInner(path, page, t0);
         const took = `${((Date.now() - t0) / 1000).toFixed(1)}초 (${this.how || "바로"})`;
         cfPref("aniya24_last_list", took);
+        if (NET_TRACE.length) cfPref("aniya24_last_trace", NET_TRACE.slice(0, 5).join(" → "));
         if (/보안 확인/.test(this.how || "")) cfPref("aniya24_last_cf_list", took);
         listCachePut(path, r);
         return r;
