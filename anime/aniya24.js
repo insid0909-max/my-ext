@@ -6,9 +6,9 @@ const mangayomiSources = [{
     "iconUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/icon.png",
     "typeSource": "single",
     "itemType": 1,
-    "isNsfw": true,
+    "isNsfw": false,
     "hasCloudflare": false,
-    "version": "0.1.12",
+    "version": "0.1.13",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/aniya24.js"
