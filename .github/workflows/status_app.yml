@@ -1,0 +1,77 @@
+name: 확장 상태판 앱
+
+# 확장 상태판 앱(statusapp/)을 빌드해 status-app 가지에 APK·version.json 을 올림 (2026-11-15 애니 저장소에서 옮겨 옴).
+# 앱은 6시간마다 이 저장소 status-app/version.json 을 보고 새 버전을 안내함.
+# 서명은 애니 저장소 때와 같은 키(statusapp/key.jks) — 키가 다르면 휴대폰에서 업데이트가 안 됨.
+# 버전 번호는 10000 + 이 저장소 커밋 수 (애니 저장소 때 마지막 5000번대보다 커야 업데이트됨)
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'statusapp/**'
+      - '.github/workflows/status_app.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: status-app
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: "8.5"
+
+      - name: 빌드
+        run: |
+          VC=$((10000 + $(git rev-list --count HEAD)))
+          echo "VC=$VC" >> $GITHUB_ENV
+          export KS_PATH="$GITHUB_WORKSPACE/statusapp/key.jks" KS_PASS=aniyomi123 KS_ALIAS=aniyomitest
+          gradle -p statusapp assembleRelease -Pvc=$VC
+          ls -la statusapp/build/outputs/apk/release/
+
+      - name: status-app 가지에 올리기
+        run: |
+          APK=$(ls statusapp/build/outputs/apk/release/*.apk | head -1)
+          NAME=statusboard.apk; VN="0.2.$VC"
+          OUT=$RUNNER_TEMP/out
+          REMOTE="https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          if git ls-remote --exit-code --heads origin status-app >/dev/null; then
+            git clone --depth 1 --branch status-app "$REMOTE" "$OUT"
+          else
+            mkdir -p "$OUT" && cd "$OUT" && git init -q -b status-app && git remote add origin "$REMOTE" && cd -
+          fi
+          cp "$APK" "$OUT/$NAME"
+          URL="https://github.com/${{ github.repository }}/raw/status-app/$NAME"
+          python3 - "$OUT/version.json" "$VC" "$VN" "$URL" <<'PY'
+          import json, os, sys
+          p, vc, vn, url = sys.argv[1:]
+          d = json.load(open(p)) if os.path.exists(p) else {}
+          d["main"] = {"versionCode": int(vc), "versionName": vn, "url": url}
+          json.dump(d, open(p, "w"), ensure_ascii=False, indent=1)
+          PY
+          cat > "$OUT/README.md" <<'MD'
+          # 확장 상태판 앱
+          - [statusboard.apk](statusboard.apk) — 휴대폰에서 받아 설치(처음 한 번 "출처를 알 수 없는 앱 설치 허용"). 홈 화면 길게 누르기 → 위젯 → 확장 상태판.
+          MD
+          cd "$OUT"
+          git config user.name "insid0909-max"
+          git config user.email "266083559+insid0909-max@users.noreply.github.com"
+          git add -A
+          git commit -q -m "확장 상태판 앱 $VN" || exit 0
+          git push origin HEAD:status-app

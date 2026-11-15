@@ -1,0 +1,86 @@
+name: 확장 상태판
+
+# 확장 상태판 (2026-11-15 애니 저장소에서 옮겨 옴, 사용자 "나만 관리하면 되니까")
+# 30분마다 애니·웹툰 저장소의 감시 결과·주소 목록·업데이트 내역·망가요미 목록을 모아 status 가지(status.json·상태판.md)에,
+# 웹 화면(status/status.html)은 gh-pages 가지 status/index.html 에 둠 → https://insid0909-max.github.io/my-ext/status/
+# 애니 저장소의 합친 목록·주소 확인(7·37분) 뒤에 돌게 17·47분
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'status/**'
+      - '.github/workflows/status.yml'
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: status
+  cancel-in-progress: false
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 애니 저장소 받기 (주소 목록·업데이트 내역·망가요미 목록·감시 설정을 읽음)
+        uses: actions/checkout@v4
+        with:
+          repository: insid0909-max/aniyomi-extensions
+          ref: master
+          path: ani
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 상태판 자료 (status 가지)
+        run: |
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          DIR="$RUNNER_TEMP/status"
+          OUT="$RUNNER_TEMP/out"
+          mkdir -p "$OUT"
+          if git ls-remote --exit-code --heads "$REMOTE" status >/dev/null 2>&1; then
+            git clone -q --depth 1 -b status "$REMOTE" "$DIR"
+          else
+            mkdir -p "$DIR" && cd "$DIR" && git init -q -b status && git remote add origin "$REMOTE" && cd -
+          fi
+          node status/status.js ani "$OUT/상태판.md" "$DIR/상태판.md" "$DIR/status.json" > /dev/null || true
+          if [ -f "$OUT/상태판.md" ]; then cp "$OUT/상태판.md" "$DIR/상태판.md"; fi
+          if [ -f "$OUT/status.json" ]; then cp "$OUT/status.json" "$DIR/status.json"; fi
+          cd "$DIR"
+          git config user.name "insid0909-max"
+          git config user.email "266083559+insid0909-max@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "바뀐 것 없음"; exit 0; fi
+          git commit -q -m "상태판 갱신"
+          git push -q origin status
+
+      - name: 웹 화면 (gh-pages 가지)
+        run: |
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          DIR="$RUNNER_TEMP/pages"
+          if git ls-remote --exit-code --heads "$REMOTE" gh-pages >/dev/null 2>&1; then
+            git clone -q --depth 1 -b gh-pages "$REMOTE" "$DIR"
+          else
+            mkdir -p "$DIR" && cd "$DIR" && git init -q -b gh-pages && git remote add origin "$REMOTE" && cd -
+          fi
+          mkdir -p "$DIR/status"
+          cp status/status.html "$DIR/status/index.html"
+          printf '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=status/"><a href="status/">확장 상태판</a>\n' > "$DIR/index.html"
+          touch "$DIR/.nojekyll"
+          cd "$DIR"
+          git config user.name "insid0909-max"
+          git config user.email "266083559+insid0909-max@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "화면 그대로"; exit 0; fi
+          git commit -q -m "상태판 화면 갱신"
+          git push -q origin gh-pages

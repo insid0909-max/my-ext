@@ -5,9 +5,16 @@
   "avflix": "AVFLIX",
   "tvroom": "티비룸",
   "aniya24": "애니야24",
-  "xvideos": "xVideos"
+  "xvideos": "xVideos",
+  "statusboard": "확장 상태판"
  },
  "items": {
+  "statusboard": [
+   {
+    "d": "2026-11-15",
+    "t": "애니 저장소에서 이 저장소로 옮김 — 30분 점검(status.yml)·웹 화면(github.io/my-ext/status)·앱 빌드(status_app.yml)·망가요미 상태판 확장(새 번호)"
+   }
+  ],
   "missav": [
    {
     "d": "2026-11-09",
