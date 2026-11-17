@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.0.1",
+    "version": "0.0.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/javtiful.js"
@@ -29,7 +29,8 @@ const SITE_RE = /^https?:\/\/(?:www\.)?javtiful\.[a-z]{2,8}/;
 const LABEL = "Javtiful";
 
 // 종류 (사이트 메뉴 그대로)
-const TYPES = [["전체", "videos", ""], ["유수정", "censored", "censored"], ["무수정", "uncensored", "uncensored"], ["모자이크 감소", "reducing-mosaic", "reducing_mosaic"]];
+const TYPES = [["전체", "videos", ""], ["유수정", "censored", "censored"], ["무수정", "uncensored", "uncensored"], ["모자이크 감소", "reducing-mosaic", "reducing_mosaic"], ["쇼츠", "shorts", ""]];
+const SHORTS = 4;
 // 카테고리 (/ko/categories, 2026-11-17)
 const CATS = [["전체", ""]].concat([
     "가정부", "간호사", "드라마", "미소녀", "밀프", "불륜", "성숙한", "아마추어", "언니", "여교사", "여대생",
@@ -66,12 +67,41 @@ const DEFAULT_POPULAR = [0, 0, 0, 2];
 const DEFAULT_LATEST = [0, 0, 0, 0];
 
 function ruleText(i) {
+    if (i[0] === SHORTS) return "쇼츠";
     if (i[2]) return `채널 ${CHANNELS[i[2]][0]} · 최신`;
     const parts = [TYPES[i[0]][0]];
     if (i[1]) parts.push(CATS[i[1]][0]);
     parts.push(SORTS[i[3]][0]);
     return parts.join(" · ");
 }
+
+// 글자 s 의 at 위치([ 또는 {)부터 짝이 맞는 곳까지 잘라 JSON 으로 (따옴표 안은 건너뜀)
+function jsonAt(s, at) {
+    let depth = 0;
+    let str = false;
+    for (let i = at; i < s.length; i++) {
+        const c = s[i];
+        if (str) {
+            if (c === "\\") i++;
+            else if (c === '"') str = false;
+        } else if (c === '"') str = true;
+        else if (c === "[" || c === "{") depth++;
+        else if (c === "]" || c === "}") {
+            depth--;
+            if (depth === 0) {
+                try {
+                    return JSON.parse(s.substring(at, i + 1));
+                } catch (e) {
+                    return null;
+                }
+            }
+        }
+    }
+    return null;
+}
+
+// 쇼츠 다음 묶음 표(cursor): 쪽 번호 → 표 (앱이 확장을 새로 띄울 수 있어 설정에도 둠)
+const SHORT_CURSORS = {};
 
 function decode(s) {
     return String(s || "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
@@ -416,6 +446,94 @@ class DefaultExtension extends MProvider {
         return { list, hasNextPage };
     }
 
+    // ---------- 쇼츠: 첫 화면 /ko/shorts 의 "feed":{"items":[…],"cursor"} → 다음은 /ko/shorts/feed?cursor=&exclude=&hashtag= (JSON)
+    shortCards(items) {
+        const base = this.getBaseUrl();
+        return (items || []).filter((o) => o && o.uid && o.media).map((o) => ({
+            name: `${String(o.caption || o.uid).trim()} [쇼츠]`,
+            imageUrl: o.poster || "",
+            link: `${base}/ko/shorts/${o.uid}`,
+        }));
+    }
+
+    // 다음 묶음은 첫 화면이 준 쿠키 shorts_guest_feeds·shorts_visitor 가 있어야 통함 (없으면 409 "feed expired")
+    // 돌려주는 값은 "이름=값; 이름=값" (새로 받은 것이 예전 것을 덮음)
+    feedCookie(res, old) {
+        const h = (res && res.headers) || {};
+        const raw = Object.keys(h).filter((k) => k.toLowerCase() === "set-cookie").map((k) => String(h[k])).join(",");
+        const jar = {};
+        for (const part of String(old || "").split(/;\s*/)) {
+            const i = part.indexOf("=");
+            if (i > 0) jar[part.substring(0, i)] = part.substring(i + 1);
+        }
+        const re = /(shorts_[a-z_]+)=([^;,\s]+)/g;
+        let m;
+        while ((m = re.exec(raw))) jar[m[1]] = m[2];
+        return Object.keys(jar).map((k) => `${k}=${jar[k]}`).join("; ");
+    }
+
+    async shortsList(page) {
+        let saved = page > 1 ? SHORT_CURSORS[page] || "" : "";
+        if (page > 1 && !saved) {
+            try {
+                saved = String(new SharedPreferences().getString(`javtiful_short_cur_${page}`, "") || "");
+            } catch (e) {
+                saved = "";
+            }
+        }
+        const [cursor, cookie] = saved ? saved.split("\n") : ["", ""];
+        let items = [];
+        let next = "";
+        let nextCookie = cookie || "";
+        if (cursor) {
+            await siteWait();
+            const res = await this.client.get(`${this.getBaseUrl()}/ko/shorts/feed?cursor=${encodeURIComponent(cursor)}&exclude=&hashtag=`, Object.assign({
+                "Referer": `${this.getBaseUrl()}/ko/shorts`, "Accept": "application/json", "X-Requested-With": "XMLHttpRequest",
+            }, cookie ? { "Cookie": cookie } : {}));
+            nextCookie = this.feedCookie(res, cookie);
+            let data = {};
+            try {
+                data = JSON.parse(String(res.body || "{}"));
+            } catch (e) {
+                data = {};
+            }
+            if (!data.success) {
+                // 표가 오래됐으면(409) 처음 묶음부터 다시
+                if (res.statusCode === 409) return { list: [], hasNextPage: false };
+                throw new Error(`쇼츠 목록을 못 받았어요 [HTTP ${res.statusCode} · ${String(data.message || "").substring(0, 50)}]`);
+            }
+            items = data.items || [];
+            next = data.cursor || "";
+        } else {
+            await siteWait();
+            const res = await this.client.get(`${this.getBaseUrl()}/ko/shorts`, { "Referer": `${this.getBaseUrl()}/` });
+            if (res.statusCode >= 400) throw new Error(`쇼츠 목록을 못 받았어요 [HTTP ${res.statusCode}]`);
+            const html = String(res.body || "");
+            nextCookie = this.feedCookie(res, "");
+            const at = html.indexOf('"feed":{"items":');
+            const feed = at >= 0 ? jsonAt(html, at + 7) : null;
+            if (!feed) throw new Error("쇼츠 목록을 못 읽었어요 [화면에 feed 자료 없음]");
+            items = feed.items || [];
+            next = feed.cursor || "";
+        }
+        if (next) {
+            const v = `${next}\n${nextCookie}`;
+            SHORT_CURSORS[page + 1] = v;
+            try {
+                new SharedPreferences().setString(`javtiful_short_cur_${page + 1}`, v);
+            } catch (e) {
+                // 메모리에만
+            }
+        }
+        const list = this.shortCards(items);
+        return { list, hasNextPage: !!next && list.length > 0 };
+    }
+
+    async listing(idx, page) {
+        if (idx[0] === SHORTS && !idx[1] && !idx[2]) return this.shortsList(page);
+        return this.parseList(await this.get(this.listUrl(idx, page)), page);
+    }
+
     listUrl(idx, page) {
         const base = `${this.getBaseUrl()}/ko`;
         const q = (o) => {
@@ -425,13 +543,13 @@ class DefaultExtension extends MProvider {
         const pg = page > 1 ? String(page) : "";
         if (idx[2]) return `${base}/channel/${CHANNELS[idx[2]][1]}${q({ page: pg })}`;
         if (idx[1]) return `${base}/category/${encodeURIComponent(CATS[idx[1]][1])}${q({ sort: SORTS[idx[3]][2], video_type: TYPES[idx[0]][2], page: pg })}`;
-        return `${base}/${TYPES[idx[0]][1]}${q({ sort: SORTS[idx[3]][1], page: pg })}`;
+        return `${base}/${idx[0] === SHORTS ? "videos" : TYPES[idx[0]][1]}${q({ sort: SORTS[idx[3]][1], page: pg })}`;
     }
 
     async getPopular(page) {
         await notesRefresh(this.client);
         const idx = ruleRead("javtiful", true, RULE_SIZES) || DEFAULT_POPULAR;
-        return this.parseList(await this.get(this.listUrl(idx, page)), page);
+        return this.listing(idx, page);
     }
 
     get supportsLatest() {
@@ -440,7 +558,7 @@ class DefaultExtension extends MProvider {
 
     async getLatestUpdates(page) {
         const idx = ruleRead("javtiful", false, RULE_SIZES) || DEFAULT_LATEST;
-        return this.parseList(await this.get(this.listUrl(idx, page)), page);
+        return this.listing(idx, page);
     }
 
     async search(query, page, filters) {
@@ -465,6 +583,14 @@ class DefaultExtension extends MProvider {
                 const d = await this.getDetail(url);
                 return { list: [{ name: d.name, imageUrl: d.imageUrl, link: url }], hasNextPage: false };
             }
+            const sh = /^\/(?:[a-z]{2}\/)?shorts\/([a-f0-9]{32})/.exec(path);
+            if (sh) {
+                if (page > 1) return { list: [], hasNextPage: false };
+                const url = `${this.getBaseUrl()}/ko/shorts/${sh[1]}`;
+                const d = await this.getDetail(url);
+                return { list: [{ name: d.name, imageUrl: d.imageUrl, link: url }], hasNextPage: false };
+            }
+            if (/^\/(?:[a-z]{2}\/)?shorts\/?(?:\?|$)/.test(path)) return this.shortsList(page);
             const l = /^\/(?:[a-z]{2}\/)?((?:videos|censored|uncensored|reducing-mosaic|category\/[^/?]+|channel\/[^/?]+|actress\/[^/?]+|search)(?:\?[^#]*)?)$/.exec(path);
             if (l) {
                 const u = `${this.getBaseUrl()}/ko/${l[1].replace(/([?&])page=\d+&?/, "$1").replace(/[?&]$/, "")}`;
@@ -485,11 +611,37 @@ class DefaultExtension extends MProvider {
             return this.parseList(await this.get(url), page);
         }
         if (rule) ruleApply("javtiful", rule, idx);
-        return this.parseList(await this.get(this.listUrl(idx, page)), page);
+        return this.listing(idx, page);
+    }
+
+    async shortDetail(clean, uid) {
+        const html = await this.get(clean);
+        const at = html.indexOf('"feed":{"items":');
+        const feed = at >= 0 ? jsonAt(html, at + 7) : null;
+        const o = ((feed && feed.items) || []).find((x) => x && x.uid === uid);
+        if (!o) throw new Error("쇼츠 정보를 못 찾았어요 [지워졌거나 화면 모양이 바뀜]");
+        const base = this.getBaseUrl();
+        const actor = (o.actress && o.actress.name) || "";
+        const full = o.fullVideoUrl ? (/^https?:/.test(o.fullVideoUrl) ? o.fullVideoUrl : base + o.fullVideoUrl) : "";
+        const episodes = [{ name: "1 쇼츠", url: o.media, dateUpload: String(Date.now()), scanlator: "" }];
+        if (full) episodes.push({ name: "2 본편", url: full, dateUpload: String(Date.now()), scanlator: "" });
+        return {
+            name: String(o.caption || uid).trim(),
+            imageUrl: o.poster || "",
+            author: "",
+            artist: actor,
+            genre: (o.hashtags || []).map((x) => String(x.name || x)).filter((x) => x),
+            status: 1,
+            description: ["쇼츠 (짧은 영상)", actor ? `출연 ${actor}` : "", full ? "본편은 회차 \"2 본편\"" : ""].filter((x) => x).join(" · "),
+            link: clean,
+            episodes: episodes.reverse(),
+        };
     }
 
     async getDetail(url) {
         const clean = url.split("#")[0];
+        const sh = /\/shorts\/([a-f0-9]{32})/.exec(clean);
+        if (sh) return this.shortDetail(clean, sh[1]);
         const html = await this.get(clean);
         const doc = new Document(html);
         const meta = (p) => {
@@ -533,6 +685,10 @@ class DefaultExtension extends MProvider {
     // 작품 화면의 재생표(ticket) → 재생 정보 요청 → 서명된 mp4 주소 (1시간)
     async getVideoList(url) {
         url = url.split("#")[0];
+        if (/\.m3u8(?:\?|$)/.test(url)) {
+            const h = { "Referer": `${this.getBaseUrl()}/` };
+            return hlsHint(qualitySort("javtiful_quality", await hlsExpand(this.client, url, `${LABEL} 쇼츠`, h)));
+        }
         const html = await this.get(url);
         const pb = /"playback":\{"endpoint":"([^"]+)","ticket":"([^"]+)"/.exec(html);
         if (!pb) {
@@ -589,7 +745,7 @@ class DefaultExtension extends MProvider {
             ...notesFilters("javtiful"),
             { type_name: "HeaderFilter", name: "검색창에 사이트 주소를 붙여 넣으면 그 주소로 바꾸고, 작품·목록 주소면 그 화면을 열어요" },
             { type_name: "SeparatorFilter" },
-            { type_name: "HeaderFilter", name: "검색어가 있으면 필터 무시 · 채널을 고르면 채널 최신순만 · 카테고리는 인기/추가 기간 정렬만" },
+            { type_name: "HeaderFilter", name: "검색어가 있으면 필터 무시 · 채널을 고르면 채널 최신순만 · 카테고리는 인기/추가 기간 정렬만 · 쇼츠는 사이트가 골라 주는 차례(정렬 없음)" },
         ].concat(FILTER_DEFS.map(([name, values]) => ({
             type_name: "SelectFilter", name, state: 0,
             values: values.map((v, j) => ({ type_name: "SelectOption", name: v[0], value: String(j) })),
