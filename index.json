@@ -152,5 +152,27 @@
     "additionalParams": "",
     "sourceCodeLanguage": 1,
     "notes": ""
+  },
+  {
+    "name": "Javtiful",
+    "id": 1720450909,
+    "baseUrl": "https://javtiful.com",
+    "lang": "ko",
+    "typeSource": "single",
+    "iconUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/icon.png",
+    "dateFormat": "",
+    "dateFormatLocale": "",
+    "isNsfw": true,
+    "hasCloudflare": false,
+    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/javtiful.js",
+    "apiUrl": "",
+    "version": "0.0.1",
+    "isManga": false,
+    "itemType": 1,
+    "isFullData": false,
+    "appMinVerReq": "0.5.0",
+    "additionalParams": "",
+    "sourceCodeLanguage": 1,
+    "notes": ""
   }
 ]
