@@ -37,6 +37,11 @@ class AdultFactory : AnimeSourceFactory {
         } catch (e: Throwable) {
             list.add(ErrorSource("xVideos 오류", e))
         }
+        try {
+            list.add(Javtiful())
+        } catch (e: Throwable) {
+            list.add(ErrorSource("Javtiful 오류", e))
+        }
         return list
     }
 }
