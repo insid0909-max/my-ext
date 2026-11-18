@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.1.2",
+    "version": "0.1.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/avflix.js"
@@ -32,9 +32,13 @@ const SITE_RE = /^https?:\/\/(?:[a-z]+\d*\.)?avflix\.[a-z]{2,8}/;
 const LABEL = "AVFLIX";
 const BLOCKED_CATS = /^(?:general|bj)$/;
 
-// 분류 (/renewal/categories.json 2026-11-18 중 일본 AV 만)
 // 사이트에 "전체" 목록 주소는 없음(검색어 없는 검색은 400 "검색어를 입력해주세요") → 첫 화면 묶음(main-section)을 분류처럼
-const CATS = [["신작 (노모)", "nomosaic", "category"], ["유모 2024", "recent", "category"], ["추천 TOP 20", "recommend", "section"], ["오늘의 TOP 20", "today", "section"]];
+// 분류는 휴대폰에서 받은 사이트 메뉴(bootstrap site.menu, 2026-11-18) 그대로 — 자막 작품은 "노모(자막)" 분류에 따로 모여 있음
+const CATS = [
+    ["노모", "nomosaic", "category"], ["노모 (자막)", "nomosaic_sub", "category"], ["유모", "recent", "category"], ["클래식", "classic", "category"],
+    ["2026 신작 (노모)", "nomosaic2026", "category"], ["2026 신작 (유모)", "mosaic2026", "category"], ["아시아/기타", "asia", "category"], ["SM", "sm", "category"],
+    ["추천 TOP 20", "recommend", "section"], ["오늘의 TOP 20", "today", "section"],
+];
 const SORTS = [["최신 등록순", "reg_date"], ["인기순", "view_count"], ["출시일순", "release_date"]];
 const SUBS = [["자막 전체", "all"], ["자막 있음", "subtitle"], ["자막 없음", "nosubtitle"]];
 const MOSAICS = [["모자이크 전체", "all"], ["모자이크", "mosaic"], ["노모자이크", "nomosaic"]];
