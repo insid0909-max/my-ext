@@ -1,14 +1,14 @@
 const mangayomiSources = [{
     "name": "AVFLIX",
     "lang": "ko",
-    "baseUrl": "https://kr7.avflix.co",
+    "baseUrl": "https://kr6.avflix.co",
     "apiUrl": "",
     "iconUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/icon.png",
     "typeSource": "single",
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.1.0",
+    "version": "0.1.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/avflix.js"
@@ -24,7 +24,9 @@ const mangayomiSources = [{
 // - /api 는 해외에서 403 (화면은 열림) → 국내 휴대폰에서만 확인 가능
 // - 분류 중 한국일반(general)·방송/BJ(bj) 는 몰래카메라·유출 영상이 섞일 위험이 커서 넣지 않음(붙여 넣기도 막음)
 // - 설정은 반드시 try 안에서 읽음 (설치 때 getHeaders·getFilterList 가 불림)
-const DEFAULT_BASE_URL = "https://kr7.avflix.co";
+const DEFAULT_BASE_URL = "https://kr6.avflix.co";
+// 예전에 자동으로 저장된 주소(kr5·kr7)는 쓰지 않고 기본 주소로 (사용자 2026-11-18 "주소 kr6")
+const OLD_AUTO = /^https:\/\/kr[57]\.avflix\./;
 const DOMAIN_RE = /^https:\/\/(?:[a-z]+\d*\.)?avflix\.[a-z]{2,8}$/;
 const SITE_RE = /^https?:\/\/(?:[a-z]+\d*\.)?avflix\.[a-z]{2,8}/;
 const LABEL = "AVFLIX";
@@ -341,7 +343,7 @@ class DefaultExtension extends MProvider {
         } catch (e) {
             auto = "";
         }
-        return DOMAIN_RE.test(auto) ? auto : DEFAULT_BASE_URL;
+        return DOMAIN_RE.test(auto) && !OLD_AUTO.test(auto) ? auto : DEFAULT_BASE_URL;
     }
 
     saveAuto(origin) {
@@ -368,7 +370,7 @@ class DefaultExtension extends MProvider {
         }
     }
 
-    /** 지금 주소가 안 열릴 때: 앞 글자 번호 +1~+5, -1~-2 (kr7 → kr8 …) */
+    /** 지금 주소가 안 열릴 때: 앞 글자 번호 +1~+5, -1~-2 (kr6 → kr7 …) */
     async discover() {
         const m = /^https:\/\/([a-z]+)(\d+)\.(avflix\.[a-z]{2,8})$/.exec(this.getBaseUrl());
         if (!m) return null;
@@ -589,7 +591,7 @@ class DefaultExtension extends MProvider {
             key: "avflix_domain",
             editTextPreference: {
                 title: "사이트 주소 직접 지정 (선택)",
-                summary: "비워 두면 https://kr7.avflix.co (안 열리면 kr8·kr9… 를 자동으로 찾아요)",
+                summary: "비워 두면 https://kr6.avflix.co (안 열리면 kr7·kr8… 를 자동으로 찾아요)",
                 value: "",
                 dialogTitle: "사이트 주소",
                 dialogMessage: "https:// 로 시작하는 주소 (또는 검색창에 붙여 넣기)",

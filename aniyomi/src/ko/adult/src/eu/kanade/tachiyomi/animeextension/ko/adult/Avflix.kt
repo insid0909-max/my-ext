@@ -60,8 +60,8 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
             if (v.isNotEmpty() && !v.startsWith("http")) v = "https://$v"
             if (DOMAIN_REGEX.matches(v)) return v
             val auto = p?.getString(PREF_AUTO_DOMAIN, "")?.trim().orEmpty()
-            // 예전 기본 주소(kr5)를 자동 주소로 저장해 둔 경우는 새 기본 주소가 이김
-            return if (DOMAIN_REGEX.matches(auto) && auto != OLD_BASE_URL) auto else DEFAULT_BASE_URL
+            // 예전에 자동으로 저장된 주소(kr5·kr7)는 쓰지 않고 기본 주소 kr6 (사용자 2026-11-18 "주소 kr6")
+            return if (DOMAIN_REGEX.matches(auto) && !OLD_AUTO.containsMatchIn(auto)) auto else DEFAULT_BASE_URL
         }
 
     override val client: OkHttpClient = network.client.newBuilder()
@@ -75,7 +75,7 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
     private fun apiHeaders(): Headers = headersBuilder().set("Accept", "application/json").build()
 
     // ================= 주소 자동 찾기 =================
-    // 지금 주소가 안 열리면(연결 실패·5xx) 앞 글자 번호 +1~+5, -1~-2 (kr7 → kr8 …). 403 은 해외·차단이라 찾지 않음
+    // 지금 주소가 안 열리면(연결 실패·5xx) 앞 글자 번호 +1~+5, -1~-2 (kr6 → kr7 …). 403 은 해외·차단이라 찾지 않음
     private fun domainIntercept(chain: Interceptor.Chain): Response {
         val req = chain.request()
         val baseHost = baseUrl.toHttpUrlOrNull()?.host
@@ -372,7 +372,7 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
         EditTextPreference(ctx).apply {
             key = PREF_DOMAIN
             title = "사이트 주소 직접 지정 (선택)"
-            summary = "비워 두면 $DEFAULT_BASE_URL (안 열리면 kr8·kr9… 를 자동으로 찾아요)\n현재 주소: $baseUrl"
+            summary = "비워 두면 $DEFAULT_BASE_URL (안 열리면 kr7·kr8… 를 자동으로 찾아요)\n현재 주소: $baseUrl"
             dialogMessage = "https:// 로 시작하는 주소 (또는 검색창에 붙여 넣기)"
             setDefaultValue("")
             setOnPreferenceChangeListener { _, newValue ->
@@ -392,8 +392,8 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
     companion object {
         private const val PREF_DOMAIN = "pref_domain_key"
         private const val PREF_AUTO_DOMAIN = "pref_domain_key_auto"
-        private const val DEFAULT_BASE_URL = "https://kr7.avflix.co"
-        private const val OLD_BASE_URL = "https://kr5.avflix.co"
+        private const val DEFAULT_BASE_URL = "https://kr6.avflix.co"
+        private val OLD_AUTO = Regex("""^https://kr[57]\.avflix\.""")
         private const val LABEL = "AVFLIX"
         private val LOCK = Any()
 
