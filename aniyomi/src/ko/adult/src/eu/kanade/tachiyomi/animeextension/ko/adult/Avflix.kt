@@ -126,8 +126,15 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
     private fun data(response: Response): JSONObject {
         val body = response.body.string()
         val j = runCatching { JSONObject(body) }.getOrNull()
-        if (!response.isSuccessful || j == null || j.optString("status") == "FAILURE" || j.has("error")) {
-            val msg = j?.optString("message")?.ifEmpty { null } ?: j?.optString("error")?.ifEmpty { null } ?: body.replace(Regex("\\s+"), " ").take(40)
+        // 사이트 코드와 같게: error 가 숫자 0 이면 성공 ("error":0, "message":"OK" 로 옴), 숫자 0 아닌 값·글자면 실패
+        val err = j?.opt("error")
+        val failed = when (err) {
+            null, JSONObject.NULL -> false
+            is Number -> err.toInt() != 0
+            else -> err.toString().isNotEmpty()
+        }
+        if (!response.isSuccessful || j == null || j.optString("status") == "FAILURE" || failed) {
+            val msg = j?.optString("message")?.ifEmpty { null } ?: err?.toString()?.ifEmpty { null } ?: body.replace(Regex("\\s+"), " ").take(40)
             throw Exception("AVFLIX 자료를 못 받았어요 [${response.request.url.encodedPath.removePrefix("/api")} · HTTP ${response.code} · ${msg.take(50)}]")
         }
         return j.optJSONObject("data") ?: j
