@@ -36,3 +36,4 @@
 - AVFLIX 기본 주소 kr6(사용자 2026-11-18 "avflix 주소 https://kr6.avflix.co/"): 망가요미 0.1.1·애니요미 — 자동 저장된 kr5·kr7 은 무시하고 기본 주소(설정에 직접 넣은 주소는 그대로).
 - AVFLIX 0.1.2(2026-11-18, 사용자 화면): 휴대폰에서 /api 열림 확인. "전체"(검색어 없는 /v1/av/search)는 HTTP 400 "검색어를 입력해주세요" → 분류를 신작(노모)·유모 2024(category)·추천 TOP 20·오늘의 TOP 20(/v1/main-section/{code}/items) 으로, "전체" 없앰. main-section 응답 모양(list·items·배열)은 미확인이라 셋 다 받음.
 - AVFLIX 0.1.3(2026-11-18, 사용자가 휴대폰 화면 HTML 을 보내 줌): 해외에서 받은 /renewal/categories.json(4개)은 옛 목록이고, 휴대폰 화면 bootstrap site.menu 에 노모(nomosaic)·노모(자막)(nomosaic_sub, 199편)·유모(recent)·클래식(classic)·2026 신작 노모/유모(nomosaic2026·mosaic2026)·아시아/기타(asia)·SM(sm) → 그대로 분류에. "자막 있음" 필터가 노모에서 1편이던 이유 = 자막 작품은 nomosaic_sub 에 따로 있음. 한국일반·방송/BJ 는 메뉴에도 없음(계속 막음).
+- AVFLIX "아시아/기타"(asia) 분류: 사용자 확인 — 한국 일반인·몰래카메라 영상 없음(2026-11-18) → 그대로 둠.
