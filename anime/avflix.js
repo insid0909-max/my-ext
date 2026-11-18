@@ -1,94 +1,60 @@
 const mangayomiSources = [{
     "name": "AVFLIX",
     "lang": "ko",
-    "baseUrl": "https://kr5.avflix.co",
+    "baseUrl": "https://kr7.avflix.co",
     "apiUrl": "",
     "iconUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/icon.png",
     "typeSource": "single",
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.0.2",
+    "version": "0.1.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/avflix.js"
 }];
 
-// 개인용 AVFLIX 소스 (2026-10-29 kr5.avflix.co 구조 확인)
-// - Next.js 사이트: 화면 데이터는 self.__next_f.push([1,"…"]) 조각(RSC). 카드 {"idx","title","thumbnail","mosaic","subtitle",
-//   "productNo","actors","regDate","releaseDate"}, 쪽 정보 "paging":{pageNo,finalPageNo…}, 메뉴 "menu":[…]
-// - 목록 /category/{code}?q=…, 검색 /search/{검색어}?q=… — q 는 사이트 코드 그대로 btoa(encodeURIComponent(JSON.stringify(
-//   {pageNo, sort, subtitle:"all", mosaic:"all"}))), 정렬 reg_date(등록일)·release_date(출시일)·view_count(조회수)
-// - 작품 /av/{idx}: 화면 데이터의 "videoUrl"(mp4, 사이트 Referer 필요) · 그림도 Referer 필요
+// 개인용 AVFLIX 소스
+// 2026-11-18 사이트 새 단장(renewal): 화면은 껍데기뿐이고 자료는 모두 /api/v1/… (응답 {data:{…}})
+// - 목록 /api/v1/av/category/{code}?sort=&subtitle=&mosaic=&pageNo=&pageSize=31 · 전체/검색 /api/v1/av/search?keyword=…
+//   → data.list[{idx,title,thumbnail,mosaic,subtitle,productNo,actors,regDate,releaseDate}], data.paging{pageNo,finalPageNo,totalSize}
+// - 작품 /api/v1/av/{idx} → data{…, story, productions, categories[{name}], contentUrl(영상)}
+// - 정렬 reg_date(최신 등록)·view_count(인기)·release_date(출시일), 자막 all·subtitle·nosubtitle, 모자이크 all·mosaic·nomosaic
+// - 영상이 CDN(cdnUrl) 에서 안 열리면 사이트 중계 /videos/{base64url(주소)}.mp4 (사이트 코드 proxyMediaUrl 과 같음)
+// - /api 는 해외에서 403 (화면은 열림) → 국내 휴대폰에서만 확인 가능
+// - 분류 중 한국일반(general)·방송/BJ(bj) 는 몰래카메라·유출 영상이 섞일 위험이 커서 넣지 않음(붙여 넣기도 막음)
 // - 설정은 반드시 try 안에서 읽음 (설치 때 getHeaders·getFilterList 가 불림)
-const DEFAULT_BASE_URL = "https://kr5.avflix.co";
+const DEFAULT_BASE_URL = "https://kr7.avflix.co";
 const DOMAIN_RE = /^https:\/\/(?:[a-z]+\d*\.)?avflix\.[a-z]{2,8}$/;
 const SITE_RE = /^https?:\/\/(?:[a-z]+\d*\.)?avflix\.[a-z]{2,8}/;
 const LABEL = "AVFLIX";
+const BLOCKED_CATS = /^(?:general|bj)$/;
 
-// 분류 (사이트 메뉴 그대로, 2026-10-29)
-const CATS = [
-    ["일본 AV 전체", "japanese"], ["노모", "nomosaic"], ["노모 (자막)", "nomosaic_sub"], ["유모", "recent"], ["클래식", "classic"],
-    ["2026년 신작 (노모)", "nomosaic2026"], ["2026년 신작 (유모)", "mosaic2026"], ["아시아/기타", "asia"], ["SM", "sm"],
-];
-const SORTS = [["등록일순", "reg_date"], ["출시일순", "release_date"], ["조회수순", "view_count"]];
-const FILTER_DEFS = [["분류", CATS], ["정렬", SORTS]];
+// 분류 (/renewal/categories.json 2026-11-18 중 일본 AV 만)
+const CATS = [["전체", ""], ["신작 (노모)", "nomosaic"], ["유모 2024", "recent"]];
+const SORTS = [["최신 등록순", "reg_date"], ["인기순", "view_count"], ["출시일순", "release_date"]];
+const SUBS = [["자막 전체", "all"], ["자막 있음", "subtitle"], ["자막 없음", "nosubtitle"]];
+const MOSAICS = [["모자이크 전체", "all"], ["모자이크", "mosaic"], ["노모자이크", "nomosaic"]];
+const FILTER_DEFS = [["분류", CATS], ["정렬", SORTS], ["자막", SUBS], ["모자이크", MOSAICS]];
 const RULE_SIZES = FILTER_DEFS.map((d) => d[1].length);
-const DEFAULT_POPULAR = [0, 2];
-const DEFAULT_LATEST = [0, 0];
+const DEFAULT_POPULAR = [0, 1, 0, 0];
+const DEFAULT_LATEST = [0, 0, 0, 0];
 
 function ruleText(i) {
-    return `${CATS[i[0]][0]} · ${SORTS[i[1]][0]}`;
+    return [CATS[i[0]][0], SORTS[i[1]][0], i[2] ? SUBS[i[2]][0] : "", i[3] ? MOSAICS[i[3]][0] : ""].filter((x) => x).join(" · ");
 }
 
-/** 사이트의 쪽·정렬 값 (사이트 화면 코드와 같은 방법) */
-function pageQuery(page, sort) {
-    const json = JSON.stringify({ pageNo: page, sort, subtitle: "all", mosaic: "all" });
-    const bytes = encodeURIComponent(json);
-    // btoa 대신 직접 (망가요미 JS 에 btoa 가 없을 수 있음). encodeURIComponent 결과는 ASCII 뿐
-    const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+// base64url (사이트 중계 주소용, 망가요미 JS 에 btoa 가 없을 수 있어 직접)
+function b64url(text) {
+    const bytes = unescape(encodeURIComponent(text));
+    const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let out = "";
     for (let i = 0; i < bytes.length; i += 3) {
         const a = bytes.charCodeAt(i);
         const b = i + 1 < bytes.length ? bytes.charCodeAt(i + 1) : NaN;
         const c = i + 2 < bytes.length ? bytes.charCodeAt(i + 2) : NaN;
         const n = (a << 16) | ((b || 0) << 8) | (c || 0);
-        out += abc[(n >> 18) & 63] + abc[(n >> 12) & 63] + (isNaN(b) ? "=" : abc[(n >> 6) & 63]) + (isNaN(c) ? "=" : abc[n & 63]);
-    }
-    return encodeURIComponent(out);
-}
-
-/** 화면 데이터 조각을 하나로 */
-function flight(html) {
-    let s = "";
-    const re = /self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)/g;
-    let m;
-    while ((m = re.exec(html))) {
-        try {
-            s += JSON.parse(`"${m[1]}"`);
-        } catch (e) {
-            // 깨진 조각은 건너뜀
-        }
-    }
-    return s;
-}
-
-/** 카드 목록 (겹치는 것 제외, 나온 순서대로) */
-function cards(data) {
-    const out = [];
-    const seen = {};
-    const re = /\{"idx":\d+,"title":[^{}]*?"regDate":[^{}]*\}/g;
-    let m;
-    while ((m = re.exec(data))) {
-        let o;
-        try {
-            o = JSON.parse(m[0]);
-        } catch (e) {
-            continue;
-        }
-        if (!o.idx || !o.title || seen[o.idx]) continue;
-        seen[o.idx] = true;
-        out.push(o);
+        out += abc[(n >> 18) & 63] + abc[(n >> 12) & 63] + (isNaN(b) ? "" : abc[(n >> 6) & 63]) + (isNaN(c) ? "" : abc[n & 63]);
     }
     return out;
 }
@@ -388,11 +354,10 @@ class DefaultExtension extends MProvider {
 
     // 그림·영상 모두 사이트 Referer 가 있어야 열림
     getHeaders(url) {
-        const origin = (/^https?:\/\/[^/]+/.exec(String(url || "")) || [DEFAULT_BASE_URL])[0];
-        return { "Referer": `${SITE_RE.test(origin) ? origin : this.getBaseUrl()}/` };
+        return { "Referer": `${this.getBaseUrl()}/` };
     }
 
-    /** 진짜 AVFLIX 화면인지 (사이트 코드 avflix 가 화면 데이터에 있음) */
+    /** 진짜 AVFLIX 화면인지 (새 화면의 renewal-bootstrap 안 사이트 코드 avflix) */
     async isSite(origin) {
         try {
             const res = await this.client.get(`${origin}/`, { "Referer": `${origin}/` });
@@ -403,7 +368,7 @@ class DefaultExtension extends MProvider {
         }
     }
 
-    /** 지금 주소가 안 열릴 때: 앞 글자 번호 +1~+5, -1~-2 (kr5 → kr6 …) */
+    /** 지금 주소가 안 열릴 때: 앞 글자 번호 +1~+5, -1~-2 (kr7 → kr8 …) */
     async discover() {
         const m = /^https:\/\/([a-z]+)(\d+)\.(avflix\.[a-z]{2,8})$/.exec(this.getBaseUrl());
         if (!m) return null;
@@ -419,53 +384,69 @@ class DefaultExtension extends MProvider {
         return null;
     }
 
-    async get(url, retried) {
+    /** 사이트 자료 (/api/v1/…) → data */
+    async api(path, retried) {
         await siteWait();
+        const base = this.getBaseUrl();
         let res = null;
         let err = "";
         try {
-            res = await this.client.get(url, { "Referer": `${this.getBaseUrl()}/` });
+            res = await this.client.get(`${base}/api${path}`, { "Referer": `${base}/`, "Accept": "application/json" });
         } catch (e) {
             err = String((e && e.message) || e).substring(0, 80);
         }
-        const body = res ? String(res.body || "") : "";
-        const broken = !res || res.statusCode >= 500 || (res.statusCode !== 404 && res.statusCode >= 400) || body.indexOf("__next_f") < 0;
-        if (broken && !retried && SITE_RE.test(url)) {
+        // 연결 실패·5xx 면 주소가 바뀐 것일 수 있음 (403 은 해외·차단이라 주소 찾기 안 함)
+        if ((!res || res.statusCode >= 500) && !retried) {
             const found = await this.discover();
-            if (found) return this.get(url.replace(SITE_RE, found), true);
+            if (found) return this.api(path, true);
         }
         if (!res) throw new Error(`AVFLIX 접속 실패: ${err}. 주소가 바뀌었으면 새 사이트 주소를 검색창에 붙여 넣어 주세요.`);
-        if (res.statusCode >= 400) {
-            throw new Error(`AVFLIX 접속 실패 (HTTP ${res.statusCode}). 주소가 바뀌었으면 새 사이트 주소를 검색창에 붙여 넣어 주세요.`);
+        let j = null;
+        try {
+            j = JSON.parse(String(res.body || ""));
+        } catch (e) {
+            j = null;
         }
-        return body;
+        if (res.statusCode >= 400 || !j || j.status === "FAILURE" || j.error) {
+            const msg = String((j && (j.message || j.error)) || String(res.body || "").replace(/\s+/g, " ").substring(0, 40));
+            throw new Error(`AVFLIX 자료를 못 받았어요 [${path.split("?")[0]} · HTTP ${res.statusCode} · ${msg.substring(0, 50)}]`);
+        }
+        return j.data !== undefined ? j.data : j;
     }
 
-    parseList(html, page) {
-        const data = flight(html);
-        const base = this.getBaseUrl();
-        const list = cards(data).map((o) => {
-            const tags = [o.subtitle ? "자막" : "", o.mosaic === false ? "노모" : ""].filter((x) => x);
-            // 출시일·등록일을 주소 끝 # 뒤에 실어 작품 정보로 넘김 (서버로는 안 감)
-            const date = String(o.releaseDate || o.regDate || "").substring(0, 10);
-            return {
-                name: String(o.title).trim() + (tags.length && !/REMOVE|자막/.test(o.title) ? ` [${tags.join("·")}]` : ""),
-                imageUrl: o.thumbnail || "",
-                link: `${base}/av/${o.idx}` + (date ? `#d=${date}` : ""),
-            };
-        });
-        const pg = /"paging":\{"pageNo":(\d+)[^}]*?"finalPageNo":(\d+)/.exec(data);
-        return { list, hasNextPage: pg ? Number(pg[1]) < Number(pg[2]) : false };
+    card(o) {
+        const tags = [o.subtitle ? "자막" : "", o.mosaic === false ? "노모" : ""].filter((x) => x);
+        // 출시일·등록일을 주소 끝 # 뒤에 실어 작품 정보로 넘김 (서버로는 안 감)
+        const date = String(o.releaseDate || o.regDate || "").substring(0, 10);
+        const title = String(o.title || o.productNo || "").trim();
+        return {
+            name: title + (tags.length && !/REMOVE|자막/.test(title) ? ` [${tags.join("·")}]` : ""),
+            imageUrl: o.thumbnail || "",
+            link: `${this.getBaseUrl()}/av/${o.idx}` + (date ? `#d=${date}` : ""),
+        };
     }
 
-    listUrl(idx, page) {
-        return `${this.getBaseUrl()}/category/${CATS[idx[0]][1]}?q=${pageQuery(page, SORTS[idx[1]][1])}`;
+    page(data) {
+        const list = ((data && data.list) || []).filter((o) => o && o.idx).map((o) => this.card(o));
+        const pg = (data && data.paging) || {};
+        return { list, hasNextPage: list.length > 0 && Number(pg.pageNo || 0) < Number(pg.finalPageNo || 0) };
+    }
+
+    query(idx, page, keyword) {
+        const p = [`sort=${SORTS[idx[1]][1]}`, `subtitle=${SUBS[idx[2]][1]}`, `mosaic=${MOSAICS[idx[3]][1]}`, `pageNo=${page}`, "pageSize=31"];
+        if (keyword !== undefined) p.push(`keyword=${encodeURIComponent(keyword)}`);
+        return p.join("&");
+    }
+
+    async listing(idx, page) {
+        const code = CATS[idx[0]][1];
+        if (code) return this.page(await this.api(`/v1/av/category/${encodeURIComponent(code)}?${this.query(idx, page)}`));
+        return this.page(await this.api(`/v1/av/search?${this.query(idx, page, "")}`));
     }
 
     async getPopular(page) {
         await notesRefresh(this.client);
-        const idx = ruleRead("avflix", true, RULE_SIZES) || DEFAULT_POPULAR;
-        return this.parseList(await this.get(this.listUrl(idx, page)), page);
+        return this.listing(ruleRead("avflix", true, RULE_SIZES) || DEFAULT_POPULAR, page);
     }
 
     get supportsLatest() {
@@ -473,13 +454,12 @@ class DefaultExtension extends MProvider {
     }
 
     async getLatestUpdates(page) {
-        const idx = ruleRead("avflix", false, RULE_SIZES) || DEFAULT_LATEST;
-        return this.parseList(await this.get(this.listUrl(idx, page)), page);
+        return this.listing(ruleRead("avflix", false, RULE_SIZES) || DEFAULT_LATEST, page);
     }
 
     async search(query, page, filters) {
         const q = String(query || "").trim();
-        // 사이트 주소(https:// 없어도) 붙여 넣기: 진짜 사이트면 그 주소로 바꿈. 작품이면 그 작품, 분류면 그 분류, 주소만이면 인기 목록
+        // 사이트 주소(https:// 없어도) 붙여 넣기: 진짜 사이트면 그 주소로 바꿈. 작품이면 그 작품, 분류·검색이면 그 목록, 주소만이면 인기 목록
         const site = /^(?:https?:\/\/)?((?:[a-z]+\d*\.)?avflix\.[a-z]{2,8})(\/[^\s]*)?$/i.exec(q);
         if (site) {
             const origin = `https://${site[1].toLowerCase()}`;
@@ -495,11 +475,30 @@ class DefaultExtension extends MProvider {
                 const d = await this.getDetail(url);
                 return { list: [{ name: d.name, imageUrl: d.imageUrl, link: url }], hasNextPage: false };
             }
-            const cat = /^\/category\/([a-z0-9_]+)/.exec(path);
-            if (cat) return this.parseList(await this.get(`${this.getBaseUrl()}/category/${cat[1]}?q=${pageQuery(page, "reg_date")}`), page);
+            const cat = /^\/category\/([^/?#]+)/.exec(path);
+            if (cat) {
+                let code = cat[1];
+                try {
+                    code = decodeURIComponent(code);
+                } catch (e) {
+                    // 그대로
+                }
+                if (BLOCKED_CATS.test(code)) throw new Error("이 분류는 확장에서 열지 않아요.");
+                return this.page(await this.api(`/v1/av/category/${encodeURIComponent(code)}?${this.query([0, 0, 0, 0], page)}`));
+            }
+            const kw = /^\/search\/([^/?#]+)/.exec(path);
+            if (kw) {
+                let k = kw[1];
+                try {
+                    k = decodeURIComponent(k);
+                } catch (e) {
+                    // 그대로
+                }
+                return this.page(await this.api(`/v1/av/search?${this.query([0, 0, 0, 0], page, k === "전체" ? "" : k)}`));
+            }
             return this.getPopular(page);
         }
-        const idx = [0, 0];
+        const idx = [0, 0, 0, 0];
         let rule = 0;
         for (const f of filters || []) {
             if (!f || f.type_name !== "SelectFilter") continue;
@@ -507,82 +506,66 @@ class DefaultExtension extends MProvider {
             if (k >= 0) idx[k] = Math.min(Math.max(Number(f.state) || 0, 0), RULE_SIZES[k] - 1);
             else if (f.name === RULE_NAME) rule = Number(f.state) || 0;
         }
-        if (q) {
-            const url = `${this.getBaseUrl()}/search/${encodeURIComponent(q)}?q=${pageQuery(page, SORTS[idx[1]][1])}`;
-            return this.parseList(await this.get(url), page);
-        }
+        if (q) return this.page(await this.api(`/v1/av/search?${this.query(idx, page, q)}`));
         if (rule) ruleApply("avflix", rule, idx);
-        return this.parseList(await this.get(this.listUrl(idx, page)), page);
+        return this.listing(idx, page);
+    }
+
+    async detail(url) {
+        const id = (/\/av\/(\d+)/.exec(url) || [])[1];
+        if (!id) throw new Error("작품 주소가 아니에요");
+        return this.api(`/v1/av/${id}`);
     }
 
     async getDetail(url) {
-        const date = (/#d=(\d{4}-\d{2}-\d{2})/.exec(url) || [])[1] || "";
         const clean = url.split("#")[0];
-        const html = await this.get(clean);
-        const data = flight(html);
-        const doc = new Document(html);
-        const meta = (p) => {
-            const m = first(doc, `meta[property="${p}"]`) || first(doc, `meta[name="${p}"]`);
-            return m ? String(m.attr("content") || "").trim() : "";
-        };
-        const name = meta("og:title") || String((first(doc, "title") || { text: "" }).text).replace(/\s*\|\s*$/, "").trim();
-        // 작품 화면의 글자들 (제목 뒤: 배지·길이·품번·분류·줄거리·출연진·제작사·레이블·감독)
-        const at = data.indexOf('"avIdx":');
-        const texts = [];
-        if (at >= 0) {
-            const re = /"children":"([^"$][^"]{0,200})"/g;
-            re.lastIndex = at;
-            let m;
-            while ((m = re.exec(data)) && texts.length < 60 && m.index < at + 20000) texts.push(m[1]);
-        }
-        const after = (label) => {
-            const i = texts.indexOf(label);
-            return i >= 0 && i + 1 < texts.length ? texts[i + 1] : "";
-        };
-        // 제목 뒤 배지(노모·자막) 중 "자막" 이면 한글 자막 (한국 사이트)
-        const subbed = texts.slice(0, 4).includes("자막");
-        const length = texts.find((t) => /^\d+시간(?: \d+분)?$|^\d+분$/.test(t)) || "";
-        const cast = after("출연진");
-        const maker = after("제작사");
-        const label = after("레이블");
-        const keywords = meta("keywords").split(",").map((x) => x.trim()).filter((x) => x && x !== name && x.length < 30);
+        const d = await this.detail(clean);
+        const date = (/#d=(\d{4}-\d{2}-\d{2})/.exec(url) || [])[1] || String(d.releaseDate || d.regDate || "").substring(0, 10);
         const m = /(\d{4})-(\d{2})-(\d{2})/.exec(date);
         const ms = m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) - 9 * 3600000 : 0;
+        const cast = (d.actors || []).join(", ");
+        const maker = (d.productions || []).join(", ");
+        const cats = (d.categories || []).map((c) => (c && c.name) || "").filter((x) => x);
+        const secs = Number(d.duration) || 0;
+        const length = secs > 0 ? (secs >= 3600 ? `${Math.floor(secs / 3600)}시간 ${Math.floor((secs % 3600) / 60)}분` : `${Math.round(secs / 60)}분`) : "";
+        const name = String(d.title || d.productNo || "").trim();
         const info = [
             length ? `길이 ${length}` : "",
             ms ? `출시일 ${ymd(ms)}` : "",
             cast ? `출연 ${cast}` : "",
             maker ? `제작사 ${maker}` : "",
-            label && label !== "감독" ? `레이블 ${label}` : "",
         ].filter((x) => x).join(" · ");
         return {
             name: ms && name && !/\(\d{4}\)$/.test(name) ? `${name} (${m[1]})` : name,
-            imageUrl: meta("og:image"),
+            imageUrl: d.thumbnail || d.heroImage || "",
             author: maker,
             artist: cast,
-            genre: keywords.slice(1),
+            genre: cats,
             status: 1,
-            description: `${subbed ? "💬 한글 자막 있음\n" : ""}${info}\n\n${meta("description")}`.trim(),
+            description: `${d.subtitle ? "💬 한글 자막 있음\n" : ""}${info}\n\n${String(d.story || "").trim()}`.trim(),
             link: url,
-            episodes: [{ name: ms ? `1 재생 (${ymd(ms)})` : "1 재생", url: clean, dateUpload: String(ms || Date.now()), scanlator: subbed ? "한글자막" : "" }],
+            episodes: [{ name: ms ? `1 재생 (${ymd(ms)})` : "1 재생", url: clean, dateUpload: String(ms || Date.now()), scanlator: d.subtitle ? "한글자막" : "" }],
         };
     }
 
     // ================= 재생 =================
     async getVideoList(url) {
         url = url.split("#")[0];
-        const data = flight(await this.get(url));
-        const headers = { "Referer": `${this.getBaseUrl()}/`, "Origin": this.getBaseUrl() };
+        const d = await this.detail(url);
+        const base = this.getBaseUrl();
+        let v = String(d.contentUrl || "").trim();
+        if (!v) throw new Error("재생할 수 있는 영상이 없어요 [작품 자료에 contentUrl 없음 · 로그인이 필요한 작품일 수 있어요]");
+        if (!/^https?:\/\//.test(v)) v = base + (v.startsWith("/") ? "" : "/") + v;
+        const headers = { "Referer": `${base}/`, "Origin": base };
         const out = [];
-        const re = /"videoUrl":"(https?:[^"]+)"/g;
-        let m;
-        while ((m = re.exec(data))) {
-            const v = m[1];
-            if (out.some((x) => x.url === v)) continue;
-            if (/\.m3u8/.test(v)) out.push(...await hlsExpand(this.client, v, LABEL, headers));
-            else out.push({ url: v, originalUrl: v, quality: withRes(out.length ? `${LABEL} (대체 ${out.length})` : LABEL, v), headers });
+        if (/\.m3u8/.test(v)) out.push(...await hlsExpand(this.client, v, LABEL, headers));
+        else out.push({ url: v, originalUrl: v, quality: withRes(LABEL, v), headers });
+        // CDN 이 막히면 사이트 중계 주소 (사이트 플레이어도 같은 방법으로 다시 시도)
+        if (!v.startsWith(base) && !/\.m3u8/.test(v)) {
+            const ext = (/\.([a-z0-9]{2,5})(?:[?#]|$)/i.exec(v.split("?")[0]) || [null, "mp4"])[1].toLowerCase();
+            const p = `${base}/videos/${b64url(v)}.${ext}`;
+            out.push({ url: p, originalUrl: p, quality: `${LABEL} (사이트 중계)`, headers });
         }
-        if (!out.length) throw new Error("영상 주소를 못 찾았어요 [작품 화면에 videoUrl 없음 · 로그인이 필요한 작품일 수 있어요]");
         return hlsHint(qualitySort("avflix_quality", out));
     }
 
@@ -593,11 +576,12 @@ class DefaultExtension extends MProvider {
             ...notesFilters("avflix"),
             { type_name: "HeaderFilter", name: "검색창에 사이트 주소를 붙여 넣으면 그 주소로 바꾸고, 작품·분류 주소면 그 화면을 열어요" },
             { type_name: "SeparatorFilter" },
-            { type_name: "HeaderFilter", name: "검색어가 있으면 정렬만 적용" },
+            { type_name: "HeaderFilter", name: "검색어가 있으면 분류는 무시 (정렬·자막·모자이크는 적용)" },
         ].concat(FILTER_DEFS.map(([name, values]) => ({
             type_name: "SelectFilter", name, state: 0,
             values: values.map((v, j) => ({ type_name: "SelectOption", name: v[0], value: String(j) })),
-        })), ruleFilters("avflix", RULE_SIZES, [ruleText(DEFAULT_POPULAR), ruleText(DEFAULT_LATEST)], ruleText));
+        })), ruleFilters("avflix", RULE_SIZES, [ruleText(DEFAULT_POPULAR), ruleText(DEFAULT_LATEST)], ruleText),
+        [0, 1, 2].map(() => ({ type_name: "HeaderFilter", name: "　" })));
     }
 
     getSourcePreferences() {
@@ -605,7 +589,7 @@ class DefaultExtension extends MProvider {
             key: "avflix_domain",
             editTextPreference: {
                 title: "사이트 주소 직접 지정 (선택)",
-                summary: "비워 두면 https://kr5.avflix.co (안 열리면 kr6·kr7… 를 자동으로 찾아요)",
+                summary: "비워 두면 https://kr7.avflix.co (안 열리면 kr8·kr9… 를 자동으로 찾아요)",
                 value: "",
                 dialogTitle: "사이트 주소",
                 dialogMessage: "https:// 로 시작하는 주소 (또는 검색창에 붙여 넣기)",
