@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.0.2",
+    "version": "0.0.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/xvideos.js"
@@ -26,18 +26,18 @@ const DOMAIN_RE = /^https:\/\/(?:www\.)?xvideos\d*\.[a-z]{2,8}$/;
 const SITE_RE = /^https?:\/\/(?:www\.)?xvideos\d*\.[a-z]{2,8}/;
 const LABEL = "xVideos";
 
-// 분류: 값이 "/" 로 시작하면 주소, 아니면 /c/ 분류
+// 분류: 값이 "/" 로 시작하면 주소, 아니면 /c/ 분류 (이름은 한글, 2026-11-18 Teen 은 뺌)
 const KINDS = [
     ["최신", "/"], ["이번 달 인기", "/best"],
-    ["AI", "AI-239"], ["ASMR", "ASMR-229"], ["Amateur", "Amateur-65"], ["Anal", "Anal-12"], ["Arab", "Arab-159"],
-    ["Asian", "Asian_Woman-32"], ["Ass", "Ass-14"], ["BBW", "bbw-51"], ["Bi", "Bi_Sexual-62"], ["Big Ass", "Big_Ass-24"],
-    ["Big Cock", "Big_Cock-34"], ["Big Tits", "Big_Tits-23"], ["Black", "Black_Woman-30"], ["Blonde", "Blonde-20"],
-    ["Blowjob", "Blowjob-15"], ["Brunette", "Brunette-25"], ["Cam Porn", "Cam_Porn-58"], ["Creampie", "Creampie-40"],
-    ["Cuckold/Hotwife", "Cuckold-237"], ["Cumshot", "Cumshot-18"], ["Femdom", "Femdom-235"], ["Fisting", "Fisting-165"],
-    ["Fucked Up Family", "Fucked_Up_Family-81"], ["Gangbang", "Gangbang-69"], ["Gapes", "Gapes-167"], ["Indian", "Indian-89"],
-    ["Interracial", "Interracial-27"], ["Latina", "Latina-16"], ["Lesbian", "Lesbian-26"], ["Lingerie", "Lingerie-83"],
-    ["Mature", "Mature-38"], ["Milf", "Milf-19"], ["Oiled", "Oiled-22"], ["Redhead", "Redhead-31"],
-    ["Solo", "Solo_and_Masturbation-33"], ["Squirting", "Squirting-56"], ["Stockings", "Stockings-28"], ["Teen", "Teen-13"],
+    ["AI 생성", "AI-239"], ["ASMR", "ASMR-229"], ["아마추어", "Amateur-65"], ["애널", "Anal-12"], ["아랍", "Arab-159"],
+    ["아시아 여성", "Asian_Woman-32"], ["엉덩이", "Ass-14"], ["통통한 여성 (BBW)", "bbw-51"], ["양성애", "Bi_Sexual-62"], ["큰 엉덩이", "Big_Ass-24"],
+    ["큰 성기", "Big_Cock-34"], ["큰 가슴", "Big_Tits-23"], ["흑인 여성", "Black_Woman-30"], ["금발", "Blonde-20"],
+    ["오럴", "Blowjob-15"], ["갈색 머리", "Brunette-25"], ["캠", "Cam_Porn-58"], ["질내사정", "Creampie-40"],
+    ["커콜드 (네토라레)", "Cuckold-237"], ["사정", "Cumshot-18"], ["여성 지배", "Femdom-235"], ["피스팅", "Fisting-165"],
+    ["가족 롤플레이", "Fucked_Up_Family-81"], ["갱뱅", "Gangbang-69"], ["확장", "Gapes-167"], ["인도", "Indian-89"],
+    ["인종 간", "Interracial-27"], ["라틴", "Latina-16"], ["레즈비언", "Lesbian-26"], ["란제리", "Lingerie-83"],
+    ["성숙한 여성", "Mature-38"], ["밀프", "Milf-19"], ["오일", "Oiled-22"], ["빨간 머리", "Redhead-31"],
+    ["솔로·자위", "Solo_and_Masturbation-33"], ["분수", "Squirting-56"], ["스타킹", "Stockings-28"],
 ];
 const SORTS = [["관련순", "relevance"], ["최신", "uploaddate"], ["평점", "rating"], ["조회", "views"], ["길이", "length"]];
 const DATES = [["전체 기간", "all"], ["오늘", "today"], ["이번 주", "week"], ["이번 달", "month"]];
