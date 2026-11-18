@@ -144,11 +144,11 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
     private fun listRequest(idx: IntArray, page: Int): Request {
-        val code = CATS[idx[0]].second
-        return if (code.isNotEmpty()) {
-            GET("$baseUrl/api/v1/av/category/${enc(code)}?${query(idx, page)}", apiHeaders())
+        val (_, code, kind) = CATS[idx[0]]
+        return if (kind == "section") {
+            GET("$baseUrl/api/v1/main-section/${enc(code)}/items?${query(idx, page)}", apiHeaders())
         } else {
-            GET("$baseUrl/api/v1/av/search?${query(idx, page, "")}", apiHeaders())
+            GET("$baseUrl/api/v1/av/category/${enc(code)}?${query(idx, page)}", apiHeaders())
         }
     }
 
@@ -185,7 +185,8 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
             }
             SEARCH_PATH.find(path)?.let { m ->
                 val k = runCatching { URLDecoder.decode(m.groupValues[1], "UTF-8") }.getOrDefault(m.groupValues[1])
-                return@fromCallable client.newCall(GET("$baseUrl/api/v1/av/search?${query(zero, page, if (k == "전체") "" else k)}", apiHeaders())).execute().use { parseList(it) }
+                val req = if (k == "전체") listRequest(zero, page) else GET("$baseUrl/api/v1/av/search?${query(zero, page, k)}", apiHeaders())
+                return@fromCallable client.newCall(req).execute().use { parseList(it) }
             }
             client.newCall(popularAnimeRequest(page)).execute().use { popularAnimeParse(it) }
         }
@@ -207,8 +208,10 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
     override fun searchAnimeParse(response: Response): AnimesPage = parseList(response)
 
     private fun parseList(response: Response): AnimesPage {
-        val d = data(response)
-        val list = d.optJSONArray("list")
+        val body = response.peekBody(Long.MAX_VALUE).string()
+        val arr = runCatching { org.json.JSONObject(body).optJSONArray("data") }.getOrNull()
+        val d = if (arr != null) JSONObject().put("list", arr) else data(response)
+        val list = d.optJSONArray("list") ?: d.optJSONArray("items")
         val animes = (0 until (list?.length() ?: 0)).mapNotNull { i ->
             val o = list!!.optJSONObject(i) ?: return@mapNotNull null
             val idx = o.optLong("idx")
@@ -411,7 +414,13 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
         private val YMD_FMT = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).apply { timeZone = KST }
 
         // 분류 (/renewal/categories.json 2026-11-18 중 일본 AV 만)
-        private val CATS = listOf("전체" to "", "신작 (노모)" to "nomosaic", "유모 2024" to "recent")
+        // 사이트에 "전체" 목록 주소는 없음(검색어 없는 검색은 400 "검색어를 입력해주세요") → 첫 화면 묶음(main-section)을 분류처럼
+        private val CATS = listOf(
+            Triple("신작 (노모)", "nomosaic", "category"),
+            Triple("유모 2024", "recent", "category"),
+            Triple("추천 TOP 20", "recommend", "section"),
+            Triple("오늘의 TOP 20", "today", "section"),
+        )
         private val SORTS = listOf("최신 등록순" to "reg_date", "인기순" to "view_count", "출시일순" to "release_date")
         private val SUBS = listOf("자막 전체" to "all", "자막 있음" to "subtitle", "자막 없음" to "nosubtitle")
         private val MOSAICS = listOf("모자이크 전체" to "all", "모자이크" to "mosaic", "노모자이크" to "nomosaic")

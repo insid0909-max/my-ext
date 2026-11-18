@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.1.1",
+    "version": "0.1.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/avflix.js"
@@ -33,7 +33,8 @@ const LABEL = "AVFLIX";
 const BLOCKED_CATS = /^(?:general|bj)$/;
 
 // 분류 (/renewal/categories.json 2026-11-18 중 일본 AV 만)
-const CATS = [["전체", ""], ["신작 (노모)", "nomosaic"], ["유모 2024", "recent"]];
+// 사이트에 "전체" 목록 주소는 없음(검색어 없는 검색은 400 "검색어를 입력해주세요") → 첫 화면 묶음(main-section)을 분류처럼
+const CATS = [["신작 (노모)", "nomosaic", "category"], ["유모 2024", "recent", "category"], ["추천 TOP 20", "recommend", "section"], ["오늘의 TOP 20", "today", "section"]];
 const SORTS = [["최신 등록순", "reg_date"], ["인기순", "view_count"], ["출시일순", "release_date"]];
 const SUBS = [["자막 전체", "all"], ["자막 있음", "subtitle"], ["자막 없음", "nosubtitle"]];
 const MOSAICS = [["모자이크 전체", "all"], ["모자이크", "mosaic"], ["노모자이크", "nomosaic"]];
@@ -429,7 +430,7 @@ class DefaultExtension extends MProvider {
     }
 
     page(data) {
-        const list = ((data && data.list) || []).filter((o) => o && o.idx).map((o) => this.card(o));
+        const list = ((Array.isArray(data) ? data : data && (data.list || data.items)) || []).filter((o) => o && o.idx).map((o) => this.card(o));
         const pg = (data && data.paging) || {};
         return { list, hasNextPage: list.length > 0 && Number(pg.pageNo || 0) < Number(pg.finalPageNo || 0) };
     }
@@ -441,9 +442,9 @@ class DefaultExtension extends MProvider {
     }
 
     async listing(idx, page) {
-        const code = CATS[idx[0]][1];
-        if (code) return this.page(await this.api(`/v1/av/category/${encodeURIComponent(code)}?${this.query(idx, page)}`));
-        return this.page(await this.api(`/v1/av/search?${this.query(idx, page, "")}`));
+        const [, code, kind] = CATS[idx[0]];
+        if (kind === "section") return this.page(await this.api(`/v1/main-section/${encodeURIComponent(code)}/items?${this.query(idx, page)}`));
+        return this.page(await this.api(`/v1/av/category/${encodeURIComponent(code)}?${this.query(idx, page)}`));
     }
 
     async getPopular(page) {
@@ -496,7 +497,8 @@ class DefaultExtension extends MProvider {
                 } catch (e) {
                     // 그대로
                 }
-                return this.page(await this.api(`/v1/av/search?${this.query([0, 0, 0, 0], page, k === "전체" ? "" : k)}`));
+                if (k === "전체") return this.listing([0, 0, 0, 0], page);
+                return this.page(await this.api(`/v1/av/search?${this.query([0, 0, 0, 0], page, k)}`));
             }
             return this.getPopular(page);
         }
