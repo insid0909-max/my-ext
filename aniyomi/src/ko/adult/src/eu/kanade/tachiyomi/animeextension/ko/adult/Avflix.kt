@@ -420,11 +420,17 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
         private val KST = TimeZone.getTimeZone("Asia/Seoul")
         private val YMD_FMT = SimpleDateFormat("yyyy.MM.dd", Locale.KOREA).apply { timeZone = KST }
 
-        // 분류 (/renewal/categories.json 2026-11-18 중 일본 AV 만)
         // 사이트에 "전체" 목록 주소는 없음(검색어 없는 검색은 400 "검색어를 입력해주세요") → 첫 화면 묶음(main-section)을 분류처럼
+        // 분류는 휴대폰에서 받은 사이트 메뉴(bootstrap site.menu, 2026-11-18) 그대로 — 자막 작품은 "노모(자막)" 분류에 따로 모여 있음
         private val CATS = listOf(
-            Triple("신작 (노모)", "nomosaic", "category"),
-            Triple("유모 2024", "recent", "category"),
+            Triple("노모", "nomosaic", "category"),
+            Triple("노모 (자막)", "nomosaic_sub", "category"),
+            Triple("유모", "recent", "category"),
+            Triple("클래식", "classic", "category"),
+            Triple("2026 신작 (노모)", "nomosaic2026", "category"),
+            Triple("2026 신작 (유모)", "mosaic2026", "category"),
+            Triple("아시아/기타", "asia", "category"),
+            Triple("SM", "sm", "category"),
             Triple("추천 TOP 20", "recommend", "section"),
             Triple("오늘의 TOP 20", "today", "section"),
         )
