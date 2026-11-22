@@ -13,7 +13,7 @@ const ANIME = [
     { key: "tvchak", name: "티비착", js: "tvchak.js", kt: true, abroad: true },
     { key: "hoohootv", name: "후후티비", kt: true, abroad: true },
     { key: "tvwiki", name: "티비위키", js: "tvwiki.js", kt: true, abroad: true },
-    { key: "tvtok", name: "티비톡", js: "tvtok.js" }, // 2026-11-22 미미티비가 이름을 바꿈 → 미미티비 뺌
+    { key: "tvtok", name: "티비톡", js: "tvtok.js", kt: true }, // 2026-11-22 미미티비가 이름을 바꿈 → 미미티비 뺌
     { key: "kotbc", name: "코티비씨", js: "kotbc.js", abroad: true },
     { key: "anilife", name: "애니라이프", js: "anilife.js", kt: true, abroad: true },
     { key: "ohli24", name: "애니24", js: "ohli24.js", kt: true, addr: "www.ohli24.net" },
