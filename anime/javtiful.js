@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.0.3",
+    "version": "0.0.4",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/javtiful.js"
@@ -65,6 +65,17 @@ const FILTER_DEFS = [["종류", TYPES], ["카테고리", CATS], ["채널", CHANN
 const RULE_SIZES = FILTER_DEFS.map((d) => d[1].length);
 const DEFAULT_POPULAR = [0, 0, 0, 2];
 const DEFAULT_LATEST = [0, 0, 0, 0];
+
+/** 사이트가 줄거리 첫 문장을 통째로 제목으로 써서 제목이 8줄씩 차지함 → 품번 + 앞부분 25글자 + "…" (전체 문장은 설명 맨 위, 애니요미 ShortTitle 과 같음) */
+function shortTitle(raw) {
+    const t = String(raw || "").trim();
+    const m = /^([A-Za-z0-9]+-\d+[A-Za-z]?)\s+(.+)$/.exec(t);
+    const rest = m ? m[2] : t;
+    if (rest.length <= 25) return t;
+    const cut = rest.substring(0, 25).replace(/[\s,.·-]+$/, "") + "…";
+    return m ? `${m[1]} ${cut}` : cut;
+}
+const fullTitle = (raw) => (shortTitle(raw) !== String(raw || "").trim() ? String(raw || "").trim() : "");
 
 function ruleText(i) {
     if (i[0] === SHORTS) return "쇼츠";
@@ -431,7 +442,7 @@ class DefaultExtension extends MProvider {
             if (!id || seen[id]) continue;
             seen[id] = true;
             const t = first(card, "a.video-card__title");
-            let name = decode(t ? (t.attr("title") || t.text) : "").trim();
+            let name = shortTitle(decode(t ? (t.attr("title") || t.text) : "").trim());
             if (!name) continue;
             const type = first(card, ".video-card__type");
             const tag = type ? String(type.text).trim() : "";
@@ -651,7 +662,8 @@ class DefaultExtension extends MProvider {
             return m ? decode(m.attr("content") || "").trim() : "";
         };
         const h1 = first(doc, ".watch-title h1") || first(doc, "h1");
-        const name = ((h1 ? String(h1.text).trim() : "") || meta("og:title")) + (/-reducing-mosaic\/?(?:[?#]|$)/i.test(url) ? " [모자이크 감소]" : "");
+        const name = (h1 ? String(h1.text).trim() : "") || meta("og:title");
+        const vtag = /-reducing-mosaic\/?(?:[?#]|$)/i.test(url) ? " [모자이크 감소]" : "";
         const texts = (css) => doc.select(css).map((e) => String(e.text).trim()).filter((x) => x);
         const cast = texts("a.watch-actor-card span");
         const cats = texts("a.watch-link-chip.is-category");
@@ -671,13 +683,13 @@ class DefaultExtension extends MProvider {
             channel ? `채널 ${channel}` : "",
         ].filter((x) => x).join(" · ");
         return {
-            name,
+            name: shortTitle(name) + vtag,
             imageUrl: meta("og:image"),
             author: channel,
             artist: cast.join(", "),
             genre: cats.concat(tags).filter((x, i, a) => a.indexOf(x) === i),
             status: 1,
-            description: info,
+            description: [fullTitle(name), info].filter((x) => x).join("\n\n"),
             link: clean,
             episodes: [{ name: ms ? `1 재생 (${ymd(ms)})` : "1 재생", url: clean, dateUpload: String(ms || Date.now()), scanlator: "" }],
         };

@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": true,
-    "version": "0.0.5",
+    "version": "0.0.6",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/missav.js"
@@ -25,6 +25,17 @@ const DOMAIN_RE = /^https:\/\/(?:www\.)?missav[a-z0-9]*\.[a-z]{2,6}$/;
 const SITE_RE = /^https?:\/\/(?:www\.)?missav[a-z0-9]*\.[a-z]{2,6}/;
 // 작품 주소: /ko/abc-123, /dm270/ko/abc-123, /ko/fc2-ppv-1234567 (목록·분류 주소는 제외)
 // 같은 작품의 다른 판은 주소 끝만 다르고 그림·제목이 같아 검색에 두 번 보임(ipzz-963 · ipzz-963-uncensored-leak) → 제목 뒤에 판 이름 (일반판은 그대로)
+/** 사이트가 줄거리 첫 문장을 통째로 제목으로 써서 제목이 8줄씩 차지함 → 품번 + 앞부분 25글자 + "…" (전체 문장은 설명 맨 위, 애니요미 ShortTitle 과 같음) */
+function shortTitle(raw) {
+    const t = String(raw || "").trim();
+    const m = /^([A-Za-z0-9]+-\d+[A-Za-z]?)\s+(.+)$/.exec(t);
+    const rest = m ? m[2] : t;
+    if (rest.length <= 25) return t;
+    const cut = rest.substring(0, 25).replace(/[\s,.·-]+$/, "") + "…";
+    return m ? `${m[1]} ${cut}` : cut;
+}
+const fullTitle = (raw) => (shortTitle(raw) !== String(raw || "").trim() ? String(raw || "").trim() : "");
+
 const VARIANTS = [["-uncensored-leak", "무삭제 유출"], ["-uncensored", "무삭제"], ["-chinese-subtitle", "중국어 자막"], ["-english-subtitle", "영어 자막"], ["-korean-subtitle", "한국어 자막"]];
 function variantTag(link) {
     const slug = String(link || "").split(/[?#]/)[0].replace(/\/+$/, "").split("/").pop().toLowerCase();
@@ -437,7 +448,7 @@ class DefaultExtension extends MProvider {
             if (cand.length > item.name.length) item.name = cand;
         }
         const out = list.filter((x) => x.imageUrl).map((x) => ({
-            name: (x.name || x.link.split("/").pop().toUpperCase()) + variantTag(x.link),
+            name: shortTitle(x.name || x.link.split("/").pop().toUpperCase()) + variantTag(x.link),
             imageUrl: x.imageUrl,
             link: x.link,
         }));
@@ -525,9 +536,9 @@ class DefaultExtension extends MProvider {
         const ms = m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) - 9 * 3600000 : 0;
         const desc = meta("og:description") || meta("description");
         return {
-            name: (ms && name && !/\(\d{4}\)$/.test(name) ? `${name} (${m[1]})` : name) + variantTag(url),
+            name: (ms && name && !/\(\d{4}\)$/.test(shortTitle(name)) ? `${shortTitle(name)} (${m[1]})` : shortTitle(name)) + variantTag(url),
             imageUrl, genre, status: 1, link: url,
-            description: (ms ? `출시일: ${ymd(ms)}\n\n` : "") + desc,
+            description: (fullTitle(name) ? `${fullTitle(name)}\n\n` : "") + (ms ? `출시일: ${ymd(ms)}\n\n` : "") + desc,
             episodes: [{ name: ms ? `1 재생 (${ymd(ms)})` : "1 재생", url, dateUpload: String(ms || Date.now()) }],
         };
     }

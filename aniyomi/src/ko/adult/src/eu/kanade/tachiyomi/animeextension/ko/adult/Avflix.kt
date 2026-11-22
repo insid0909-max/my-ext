@@ -227,7 +227,7 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
             val date = o.optString("releaseDate").ifEmpty { o.optString("regDate") }.take(10)
             SAnime.create().apply {
                 url = "/av/$idx" + if (YMD_PARTS.matches(date)) "#d=$date" else ""
-                this.title = title + tag
+                this.title = ShortTitle.of(title) + tag
                 thumbnail_url = o.optString("thumbnail").ifEmpty { null }
             }
         }
@@ -302,7 +302,8 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
             maker.ifEmpty { null }?.let { "제작사 $it" },
         ).joinToString(" · ")
         return SAnime.create().apply {
-            title = (if (year != null && name.isNotEmpty() && !TITLE_YEAR.containsMatchIn(name)) "$name ($year)" else name) + tag
+            val short = ShortTitle.of(name)
+            title = (if (year != null && short.isNotEmpty() && !TITLE_YEAR.containsMatchIn(short)) "$short ($year)" else short) + tag
             thumbnail_url = d.optString("thumbnail").ifEmpty { d.optString("heroImage") }.ifEmpty { null }
             author = maker.ifEmpty { null }
             artist = cast.ifEmpty { null }
@@ -310,6 +311,7 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
             status = SAnime.COMPLETED
             update_strategy = AnimeUpdateStrategy.ONLY_FETCH_ONCE
             description = listOfNotNull(
+                ShortTitle.full(name),
                 if (d.optBoolean("subtitle")) "💬 한글 자막 있음" else null,
                 info,
                 d.optString("story").trim(),

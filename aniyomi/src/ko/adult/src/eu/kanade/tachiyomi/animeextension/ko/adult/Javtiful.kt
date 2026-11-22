@@ -187,7 +187,7 @@ class Javtiful : AnimeHttpSource(), ConfigurableAnimeSource {
             val id = VIDEO_ID.find(href)?.groupValues?.get(1) ?: return@mapNotNull null
             if (!seen.add(id)) return@mapNotNull null
             val t = card.selectFirst("a.video-card__title")
-            var title = (t?.attr("title")?.ifEmpty { null } ?: t?.text().orEmpty()).trim()
+            var title = ShortTitle.of((t?.attr("title")?.ifEmpty { null } ?: t?.text().orEmpty()).trim())
             if (title.isEmpty()) return@mapNotNull null
             val tag = card.selectFirst(".video-card__type")?.text().orEmpty()
             if (tag.contains("uncensored", true) && !Regex("uncensored|무수정", RegexOption.IGNORE_CASE).containsMatchIn(title)) title += " [무수정]"
@@ -308,14 +308,14 @@ class Javtiful : AnimeHttpSource(), ConfigurableAnimeSource {
             channel.ifEmpty { null }?.let { "채널 $it" },
         ).joinToString(" · ")
         return SAnime.create().apply {
-            title = name + if (REDUCING.containsMatchIn(response.request.url.encodedPath)) " [모자이크 감소]" else ""
+            title = ShortTitle.of(name) + if (REDUCING.containsMatchIn(response.request.url.encodedPath)) " [모자이크 감소]" else ""
             thumbnail_url = meta("og:image").ifEmpty { null }
             author = channel.ifEmpty { null }
             artist = cast.joinToString(", ").ifEmpty { null }
             genre = chips.joinToString(", ").ifEmpty { null }
             status = SAnime.COMPLETED
             update_strategy = AnimeUpdateStrategy.ONLY_FETCH_ONCE
-            description = info
+            description = listOfNotNull(ShortTitle.full(name), info.ifEmpty { null }).joinToString("\n\n")
         }
     }
 

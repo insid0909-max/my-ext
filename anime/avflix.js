@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.1.4",
+    "version": "0.1.5",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/avflix.js"
@@ -45,6 +45,17 @@ const SUBS = [["자막 전체", "all"], ["자막 있음", "subtitle"], ["자막 
  * 같은 작품이 노모판(제목 가운데 "REMOVE")·유모판으로 따로 있어 검색에 두 번 보임(IPZZ-936 /av/83530 · /av/83529)
  * → "REMOVE" 는 빼고 제목 뒤에 [노모]·[자막] (MissAV·Javtiful 판 이름과 같은 모양)
  */
+/** 사이트가 줄거리 첫 문장을 통째로 제목으로 써서 제목이 8줄씩 차지함 → 품번 + 앞부분 25글자 + "…" (전체 문장은 설명 맨 위, 애니요미 ShortTitle 과 같음) */
+function shortTitle(raw) {
+    const t = String(raw || "").trim();
+    const m = /^([A-Za-z0-9]+-\d+[A-Za-z]?)\s+(.+)$/.exec(t);
+    const rest = m ? m[2] : t;
+    if (rest.length <= 25) return t;
+    const cut = rest.substring(0, 25).replace(/[\s,.·-]+$/, "") + "…";
+    return m ? `${m[1]} ${cut}` : cut;
+}
+const fullTitle = (raw) => (shortTitle(raw) !== String(raw || "").trim() ? String(raw || "").trim() : "");
+
 function avTitle(title, subtitle, mosaic) {
     let t = String(title || "");
     let nomo = mosaic === false;
@@ -440,7 +451,7 @@ class DefaultExtension extends MProvider {
         const date = String(o.releaseDate || o.regDate || "").substring(0, 10);
         const v = avTitle(String(o.title || o.productNo || "").trim(), o.subtitle, o.mosaic);
         return {
-            name: v.title + v.tag,
+            name: shortTitle(v.title) + v.tag,
             imageUrl: o.thumbnail || "",
             link: `${this.getBaseUrl()}/av/${o.idx}` + (date ? `#d=${date}` : ""),
         };
@@ -558,13 +569,13 @@ class DefaultExtension extends MProvider {
             maker ? `제작사 ${maker}` : "",
         ].filter((x) => x).join(" · ");
         return {
-            name: (ms && name && !/\(\d{4}\)$/.test(name) ? `${name} (${m[1]})` : name) + v.tag,
+            name: (ms && name && !/\(\d{4}\)$/.test(shortTitle(name)) ? `${shortTitle(name)} (${m[1]})` : shortTitle(name)) + v.tag,
             imageUrl: d.thumbnail || d.heroImage || "",
             author: maker,
             artist: cast,
             genre: cats,
             status: 1,
-            description: `${d.subtitle ? "💬 한글 자막 있음\n" : ""}${info}\n\n${String(d.story || "").trim()}`.trim(),
+            description: `${fullTitle(name) ? fullTitle(name) + "\n\n" : ""}${d.subtitle ? "💬 한글 자막 있음\n" : ""}${info}\n\n${String(d.story || "").trim()}`.trim(),
             link: url,
             episodes: [{ name: ms ? `1 재생 (${ymd(ms)})` : "1 재생", url: clean, dateUpload: String(ms || Date.now()), scanlator: d.subtitle ? "한글자막" : "" }],
         };

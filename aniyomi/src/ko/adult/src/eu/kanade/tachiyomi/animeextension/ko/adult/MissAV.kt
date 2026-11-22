@@ -205,7 +205,7 @@ class MissAV : AnimeHttpSource(), ConfigurableAnimeSource {
         val animes = byLink.values.filter { it.image.isNotEmpty() }.map { c ->
             SAnime.create().apply {
                 url = relPath(c.link)
-                title = c.name.ifEmpty { c.link.substringAfterLast('/').uppercase() } + variantTag(c.link)
+                title = ShortTitle.of(c.name.ifEmpty { c.link.substringAfterLast('/').uppercase() }) + variantTag(c.link)
                 thumbnail_url = c.image
             }
         }
@@ -263,13 +263,14 @@ class MissAV : AnimeHttpSource(), ConfigurableAnimeSource {
     override fun animeDetailsParse(response: Response): SAnime {
         val d = detail(response)
         return SAnime.create().apply {
-            title = (if (d.year != null && d.title.isNotEmpty() && !TITLE_YEAR.containsMatchIn(d.title)) "${d.title} (${d.year})" else d.title) +
+            val short = ShortTitle.of(d.title)
+            title = (if (d.year != null && short.isNotEmpty() && !TITLE_YEAR.containsMatchIn(short)) "$short (${d.year})" else short) +
                 variantTag(response.request.url.toString())
             thumbnail_url = d.image
             genre = d.genres.joinToString(", ").ifEmpty { null }
             status = SAnime.COMPLETED
             update_strategy = AnimeUpdateStrategy.ONLY_FETCH_ONCE
-            description = listOfNotNull(if (d.date > 0) "출시일: ${ymd(d.date)}" else null, d.desc.ifEmpty { null }).joinToString("\n\n")
+            description = listOfNotNull(ShortTitle.full(d.title), if (d.date > 0) "출시일: ${ymd(d.date)}" else null, d.desc.ifEmpty { null }).joinToString("\n\n")
         }
     }
 
