@@ -205,7 +205,7 @@ class MissAV : AnimeHttpSource(), ConfigurableAnimeSource {
         val animes = byLink.values.filter { it.image.isNotEmpty() }.map { c ->
             SAnime.create().apply {
                 url = relPath(c.link)
-                title = c.name.ifEmpty { c.link.substringAfterLast('/').uppercase() }
+                title = c.name.ifEmpty { c.link.substringAfterLast('/').uppercase() } + variantTag(c.link)
                 thumbnail_url = c.image
             }
         }
@@ -223,6 +223,16 @@ class MissAV : AnimeHttpSource(), ConfigurableAnimeSource {
             throw Exception("MissAV 접속 실패 (HTTP ${response.code}). 주소가 바뀌었으면 새 사이트 주소(예: missav.live)를 검색창에 붙여 넣어 주세요.")
         }
         return body
+    }
+
+    /**
+     * 같은 작품의 다른 판은 주소 끝만 다르고 그림·제목이 같아 검색에 두 번 보임(ipzz-963 · ipzz-963-uncensored-leak)
+     * → 주소 끝을 보고 제목 뒤에 판 이름을 붙임. 일반판은 그대로
+     */
+    private fun variantTag(link: String): String {
+        val slug = cleanLink(link).substringAfterLast('/').lowercase()
+        val tag = VARIANTS.firstOrNull { slug.endsWith(it.first) }?.second ?: return ""
+        return " [$tag]"
     }
 
     // ================= 작품 정보 =================
@@ -253,7 +263,8 @@ class MissAV : AnimeHttpSource(), ConfigurableAnimeSource {
     override fun animeDetailsParse(response: Response): SAnime {
         val d = detail(response)
         return SAnime.create().apply {
-            title = if (d.year != null && d.title.isNotEmpty() && !TITLE_YEAR.containsMatchIn(d.title)) "${d.title} (${d.year})" else d.title
+            title = (if (d.year != null && d.title.isNotEmpty() && !TITLE_YEAR.containsMatchIn(d.title)) "${d.title} (${d.year})" else d.title) +
+                variantTag(response.request.url.toString())
             thumbnail_url = d.image
             genre = d.genres.joinToString(", ").ifEmpty { null }
             status = SAnime.COMPLETED
@@ -368,6 +379,13 @@ class MissAV : AnimeHttpSource(), ConfigurableAnimeSource {
         private val SITE_PATH_REGEX = Regex("""^(?:https?://)?(?:www\.)?missav[a-z0-9]*\.[a-z]{2,6}/""", RegexOption.IGNORE_CASE)
 
         // 작품 주소: /ko/abc-123, /dm270/ko/abc-123, /ko/fc2-ppv-1234567 (목록·분류 주소는 제외)
+        private val VARIANTS = listOf(
+            "-uncensored-leak" to "무삭제 유출",
+            "-uncensored" to "무삭제",
+            "-chinese-subtitle" to "중국어 자막",
+            "-english-subtitle" to "영어 자막",
+            "-korean-subtitle" to "한국어 자막",
+        )
         private val POST_REGEX = Regex("""^https?://[^/]+/(?:dm\d+/)?ko/[a-z0-9][a-z0-9_-]*\d[a-z0-9_-]*$""", RegexOption.IGNORE_CASE)
         private val CF_REGEX = Regex("""Just a moment|cf-chl|challenge-platform""", RegexOption.IGNORE_CASE)
         private val YMD = Regex("""\d{4}-\d{2}-\d{2}""")
