@@ -223,15 +223,11 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
             val o = list!!.optJSONObject(i) ?: return@mapNotNull null
             val idx = o.optLong("idx")
             if (idx == 0L) return@mapNotNull null
-            val title = o.optString("title").trim().ifEmpty { o.optString("productNo") }
-            val tags = listOfNotNull(
-                if (o.optBoolean("subtitle")) "자막" else null,
-                if (o.has("mosaic") && !o.optBoolean("mosaic", true)) "노모" else null,
-            )
+            val (title, tag) = avTitle(o.optString("title").trim().ifEmpty { o.optString("productNo") }, o)
             val date = o.optString("releaseDate").ifEmpty { o.optString("regDate") }.take(10)
             SAnime.create().apply {
                 url = "/av/$idx" + if (YMD_PARTS.matches(date)) "#d=$date" else ""
-                this.title = title + if (tags.isNotEmpty() && !Regex("REMOVE|자막").containsMatchIn(title)) " [${tags.joinToString("·")}]" else ""
+                this.title = title + tag
                 thumbnail_url = o.optString("thumbnail").ifEmpty { null }
             }
         }
@@ -269,10 +265,28 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
         }
     }
 
+    /**
+     * 같은 작품이 노모판(제목 가운데 "REMOVE")·유모판으로 따로 있어 검색에 두 번 보임(IPZZ-936 /av/83530 · /av/83529)
+     * → "REMOVE" 는 빼고 제목 뒤에 [노모]·[자막] (MissAV·Javtiful 판 이름과 같은 모양). 돌려줌: (제목, 뒤에 붙일 판 이름)
+     */
+    private fun avTitle(raw: String, o: JSONObject): Pair<String, String> {
+        var t = raw
+        var nomo = o.has("mosaic") && !o.isNull("mosaic") && !o.optBoolean("mosaic", true)
+        if (REMOVE_WORD.containsMatchIn(t)) {
+            nomo = true
+            t = t.replaceFirst(REMOVE_WORD, " ").replace(Regex("\\s+"), " ").trim()
+        }
+        val tags = listOfNotNull(
+            if (o.optBoolean("subtitle") && !t.contains("자막")) "자막" else null,
+            if (nomo && !t.contains("노모")) "노모" else null,
+        )
+        return t to if (tags.isNotEmpty()) " [${tags.joinToString("·")}]" else ""
+    }
+
     override fun animeDetailsParse(response: Response): SAnime {
         val d = data(response)
         val (ms, year) = dateMs(response, d)
-        val name = d.optString("title").trim().ifEmpty { d.optString("productNo") }
+        val (name, tag) = avTitle(d.optString("title").trim().ifEmpty { d.optString("productNo") }, d)
         val cast = names(d, "actors").joinToString(", ")
         val maker = names(d, "productions").joinToString(", ")
         val secs = d.optInt("duration")
@@ -288,7 +302,7 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
             maker.ifEmpty { null }?.let { "제작사 $it" },
         ).joinToString(" · ")
         return SAnime.create().apply {
-            title = if (year != null && name.isNotEmpty() && !TITLE_YEAR.containsMatchIn(name)) "$name ($year)" else name
+            title = (if (year != null && name.isNotEmpty() && !TITLE_YEAR.containsMatchIn(name)) "$name ($year)" else name) + tag
             thumbnail_url = d.optString("thumbnail").ifEmpty { d.optString("heroImage") }.ifEmpty { null }
             author = maker.ifEmpty { null }
             artist = cast.ifEmpty { null }
@@ -436,6 +450,7 @@ class Avflix : AnimeHttpSource(), ConfigurableAnimeSource {
         )
         private val SORTS = listOf("최신 등록순" to "reg_date", "인기순" to "view_count", "출시일순" to "release_date")
         private val SUBS = listOf("자막 전체" to "all", "자막 있음" to "subtitle", "자막 없음" to "nosubtitle")
+        private val REMOVE_WORD = Regex("""\s*\bREMOVE\b\s*""")
         private val MOSAICS = listOf("모자이크 전체" to "all", "모자이크" to "mosaic", "노모자이크" to "nomosaic")
 
         private val DEFAULT_POPULAR = intArrayOf(0, 1, 0, 0)

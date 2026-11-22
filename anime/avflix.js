@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.1.3",
+    "version": "0.1.4",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/avflix.js"
@@ -41,6 +41,20 @@ const CATS = [
 ];
 const SORTS = [["최신 등록순", "reg_date"], ["인기순", "view_count"], ["출시일순", "release_date"]];
 const SUBS = [["자막 전체", "all"], ["자막 있음", "subtitle"], ["자막 없음", "nosubtitle"]];
+/**
+ * 같은 작품이 노모판(제목 가운데 "REMOVE")·유모판으로 따로 있어 검색에 두 번 보임(IPZZ-936 /av/83530 · /av/83529)
+ * → "REMOVE" 는 빼고 제목 뒤에 [노모]·[자막] (MissAV·Javtiful 판 이름과 같은 모양)
+ */
+function avTitle(title, subtitle, mosaic) {
+    let t = String(title || "");
+    let nomo = mosaic === false;
+    if (/\bREMOVE\b/.test(t)) {
+        nomo = true;
+        t = t.replace(/\s*\bREMOVE\b\s*/, " ").replace(/\s+/g, " ").trim();
+    }
+    const tags = [subtitle && !/자막/.test(t) ? "자막" : "", nomo && !/노모/.test(t) ? "노모" : ""].filter((x) => x);
+    return { title: t, tag: tags.length ? ` [${tags.join("·")}]` : "" };
+}
 const MOSAICS = [["모자이크 전체", "all"], ["모자이크", "mosaic"], ["노모자이크", "nomosaic"]];
 const FILTER_DEFS = [["분류", CATS], ["정렬", SORTS], ["자막", SUBS], ["모자이크", MOSAICS]];
 const RULE_SIZES = FILTER_DEFS.map((d) => d[1].length);
@@ -422,12 +436,11 @@ class DefaultExtension extends MProvider {
     }
 
     card(o) {
-        const tags = [o.subtitle ? "자막" : "", o.mosaic === false ? "노모" : ""].filter((x) => x);
         // 출시일·등록일을 주소 끝 # 뒤에 실어 작품 정보로 넘김 (서버로는 안 감)
         const date = String(o.releaseDate || o.regDate || "").substring(0, 10);
-        const title = String(o.title || o.productNo || "").trim();
+        const v = avTitle(String(o.title || o.productNo || "").trim(), o.subtitle, o.mosaic);
         return {
-            name: title + (tags.length && !/REMOVE|자막/.test(title) ? ` [${tags.join("·")}]` : ""),
+            name: v.title + v.tag,
             imageUrl: o.thumbnail || "",
             link: `${this.getBaseUrl()}/av/${o.idx}` + (date ? `#d=${date}` : ""),
         };
@@ -536,7 +549,8 @@ class DefaultExtension extends MProvider {
         const cats = (d.categories || []).map((c) => (c && c.name) || "").filter((x) => x);
         const secs = Number(d.duration) || 0;
         const length = secs > 0 ? (secs >= 3600 ? `${Math.floor(secs / 3600)}시간 ${Math.floor((secs % 3600) / 60)}분` : `${Math.round(secs / 60)}분`) : "";
-        const name = String(d.title || d.productNo || "").trim();
+        const v = avTitle(String(d.title || d.productNo || "").trim(), d.subtitle, d.mosaic);
+        const name = v.title;
         const info = [
             length ? `길이 ${length}` : "",
             ms ? `출시일 ${ymd(ms)}` : "",
@@ -544,7 +558,7 @@ class DefaultExtension extends MProvider {
             maker ? `제작사 ${maker}` : "",
         ].filter((x) => x).join(" · ");
         return {
-            name: ms && name && !/\(\d{4}\)$/.test(name) ? `${name} (${m[1]})` : name,
+            name: (ms && name && !/\(\d{4}\)$/.test(name) ? `${name} (${m[1]})` : name) + v.tag,
             imageUrl: d.thumbnail || d.heroImage || "",
             author: maker,
             artist: cast,
