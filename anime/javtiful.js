@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.0.2",
+    "version": "0.0.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/javtiful.js"
@@ -436,6 +436,8 @@ class DefaultExtension extends MProvider {
             const type = first(card, ".video-card__type");
             const tag = type ? String(type.text).trim() : "";
             if (tag && /uncensored/i.test(tag) && !/uncensored|무수정/i.test(name)) name += " [무수정]";
+            // 같은 작품의 모자이크 감소판(…-reducing-mosaic)이 일반판과 그림·제목이 같아 두 번 보임 → 판 이름
+            if (/reducing/i.test(tag) || /-reducing-mosaic\/?$/i.test(href)) name += " [모자이크 감소]";
             const img = first(card, "img");
             let src = img ? String(img.attr("data-front-lazy-src") || img.attr("src") || "") : "";
             if (/placeholder/.test(src)) src = "";
@@ -649,7 +651,7 @@ class DefaultExtension extends MProvider {
             return m ? decode(m.attr("content") || "").trim() : "";
         };
         const h1 = first(doc, ".watch-title h1") || first(doc, "h1");
-        const name = (h1 ? String(h1.text).trim() : "") || meta("og:title");
+        const name = ((h1 ? String(h1.text).trim() : "") || meta("og:title")) + (/-reducing-mosaic\/?(?:[?#]|$)/i.test(url) ? " [모자이크 감소]" : "");
         const texts = (css) => doc.select(css).map((e) => String(e.text).trim()).filter((x) => x);
         const cast = texts("a.watch-actor-card span");
         const cats = texts("a.watch-link-chip.is-category");

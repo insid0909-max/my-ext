@@ -191,6 +191,8 @@ class Javtiful : AnimeHttpSource(), ConfigurableAnimeSource {
             if (title.isEmpty()) return@mapNotNull null
             val tag = card.selectFirst(".video-card__type")?.text().orEmpty()
             if (tag.contains("uncensored", true) && !Regex("uncensored|무수정", RegexOption.IGNORE_CASE).containsMatchIn(title)) title += " [무수정]"
+            // 같은 작품의 모자이크 감소판(…-reducing-mosaic)이 일반판과 그림·제목이 같아 두 번 보임 → 판 이름
+            if (tag.contains("reducing", true) || REDUCING.containsMatchIn(href)) title += " [모자이크 감소]"
             val img = card.selectFirst("img")
             val src = (img?.attr("abs:data-front-lazy-src")?.ifEmpty { null } ?: img?.attr("abs:src")).orEmpty()
             SAnime.create().apply {
@@ -306,7 +308,7 @@ class Javtiful : AnimeHttpSource(), ConfigurableAnimeSource {
             channel.ifEmpty { null }?.let { "채널 $it" },
         ).joinToString(" · ")
         return SAnime.create().apply {
-            title = name
+            title = name + if (REDUCING.containsMatchIn(response.request.url.encodedPath)) " [모자이크 감소]" else ""
             thumbnail_url = meta("og:image").ifEmpty { null }
             author = channel.ifEmpty { null }
             artist = cast.joinToString(", ").ifEmpty { null }
@@ -476,6 +478,7 @@ class Javtiful : AnimeHttpSource(), ConfigurableAnimeSource {
         private val VIDEO_PATH = Regex("""^/video/\d+/[^/?]+""")
         private val SHORT_PATH = Regex("""/shorts/([a-f0-9]{32})""")
         private val SHORTS_LIST = Regex("""^/shorts/?$""")
+        private val REDUCING = Regex("""-reducing-mosaic/?$""", RegexOption.IGNORE_CASE)
         private val LIST_PATH = Regex("""^/(?:videos|censored|uncensored|reducing-mosaic|category/[^/?]+|channel/[^/?]+|actress/[^/?]+|search)(?:\?|$)""")
         private val PAGE_PARAM = Regex("""([?&])page=\d+&?""")
         private val VIDEO_ID = Regex("""/video/(\d+)""")
