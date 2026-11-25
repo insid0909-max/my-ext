@@ -15,7 +15,7 @@ const ANIME = [
     { key: "tvwiki", name: "티비위키", js: "tvwiki.js", kt: true, abroad: true },
     { key: "kotbc", name: "코티비씨", js: "kotbc.js", abroad: true },
     { key: "anilife", name: "애니라이프", js: "anilife.js", kt: true, abroad: true },
-    { key: "ohli24", name: "애니24", js: "ohli24.js", kt: true, addr: "www.ohli24.net" },
+    { key: "ohli24", name: "애니24", js: "ohli24.js", kt: true, addr: "a101.ohli24.net", abroad: true },
     { key: "aniweek", name: "애니위크", js: "aniweek.js", kt: true },
     { key: "linkani", name: "링크애니", js: "linkani.js", addr: "linkani.tv" },
     { key: "aniya24", name: "애니야24", kt: true, abroad: true, addr: "www.aniya24.com" },
