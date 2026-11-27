@@ -7,9 +7,16 @@
   "aniya24": "애니야24",
   "xvideos": "xVideos",
   "statusboard": "확장 상태판",
-  "javtiful": "Javtiful"
+  "javtiful": "Javtiful",
+  "zzap208": "짭플릭스"
  },
  "items": {
+  "zzap208": [
+   {
+    "d": "2026-11-27",
+    "t": "망가요미: 정식 등록 0.1.0 — 새 주소 자동 따라가기·선호 화질·인기/최신 탭 규칙·📝 상태 줄"
+   }
+  ],
   "statusboard": [
    {
     "d": "2026-11-15",
