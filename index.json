@@ -174,27 +174,5 @@
     "additionalParams": "",
     "sourceCodeLanguage": 1,
     "notes": ""
-  },
-  {
-    "name": "미미티비",
-    "id": 1720450910,
-    "baseUrl": "https://mimitv16.com",
-    "lang": "ko",
-    "typeSource": "single",
-    "iconUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/icon.png",
-    "dateFormat": "",
-    "dateFormatLocale": "",
-    "isNsfw": false,
-    "hasCloudflare": false,
-    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/mimitv.js",
-    "apiUrl": "",
-    "version": "0.0.1",
-    "isManga": false,
-    "itemType": 1,
-    "isFullData": false,
-    "appMinVerReq": "0.5.0",
-    "additionalParams": "",
-    "sourceCodeLanguage": 1,
-    "notes": ""
   }
 ]
