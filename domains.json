@@ -2,9 +2,6 @@
   "domains": {
     "tvroom": {
       "baseUrl": "https://tvroom48.org"
-    },
-    "zzap": {
-      "baseUrl": "https://zzap208.com"
     }
   }
 }
