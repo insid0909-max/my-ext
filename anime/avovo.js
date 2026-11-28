@@ -1,5 +1,5 @@
 const mangayomiSources = [{
-    "name": "[시험] 아보보",
+    "name": "아보보",
     "lang": "ko",
     "baseUrl": "https://03.avovo.net",
     "apiUrl": "",
@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.0.2",
+    "version": "0.1.0",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/avovo.js"
