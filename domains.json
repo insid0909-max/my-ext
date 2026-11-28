@@ -2,6 +2,10 @@
   "domains": {
     "tvroom": {
       "baseUrl": "https://tvroom48.org"
+    },
+    "avovo": {
+      "baseUrl": "https://03.avovo.net",
+      "updated": "2026-11-28"
     }
   }
 }
