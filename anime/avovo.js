@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.1.0",
+    "version": "0.1.1",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/avovo.js"
@@ -35,7 +35,7 @@ const DOMAINS_URL = "https://raw.githubusercontent.com/insid0909-max/my-ext/main
 const NOTES_URL = "https://raw.githubusercontent.com/insid0909-max/my-ext/main/changelog.json";
 const INDEX_URL = "https://raw.githubusercontent.com/insid0909-max/my-ext/main/index.json";
 // 분류: 0 = 전체(검색은 모든 게시판, 목록은 모자이크제거)
-const CATS = [["전체", ""], ["모자이크제거", "javremove"], ["노모", "javu"], ["유모", "jav"], ["유출", "javleak"], ["FC2", "javfc2"], ["아마추어", "javmgs"]];
+const CATS = [["전체", ""], ["일본 유모야동", "jav"], ["일본 아마추어야동", "javmgs"], ["일본 노모야동", "javu"], ["일본 FC2야동", "javfc2"], ["모자이크제거야동", "javremove"], ["일본 유출야동", "javleak"]];
 const ORDERS = [["최신순", "date"], ["조회순", "views"], ["추천순", "likes"], ["댓글순", "comments"]];
 const RULE_SIZES = [CATS.length, ORDERS.length];
 const DEFAULT_POPULAR = [0, 1];
@@ -157,14 +157,14 @@ async function followAll(ext) {
 
 // ---------- 인기/최신 탭 규칙 ----------
 function ruleRead(popular) {
-    const raw = gget(`${KEY}_${popular ? "pop" : "latest"}_rule`, "");
+    const raw = gget(`${KEY}_${popular ? "pop" : "latest"}_rule2`, "");
     if (!raw) return null;
     const idx = raw.split(",").map((x) => parseInt(x, 10));
     if (idx.length !== RULE_SIZES.length || idx.some((v, i) => !(v >= 0 && v < RULE_SIZES[i]))) return null;
     return idx;
 }
 function ruleApply(rule, idx) {
-    const pop = `${KEY}_pop_rule`, latest = `${KEY}_latest_rule`, v = idx.join(",");
+    const pop = `${KEY}_pop_rule2`, latest = `${KEY}_latest_rule2`, v = idx.join(",");
     if (rule === 1) gset(pop, v);
     else if (rule === 2) gset(latest, v);
     else if (rule === 3) gset(pop, "");
