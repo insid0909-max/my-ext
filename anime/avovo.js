@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.1.1",
+    "version": "0.1.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/avovo.js"
@@ -469,6 +469,19 @@ class DefaultExtension extends MProvider {
         const desc = [];
         if (prose && strip(prose[1])) desc.push(strip(prose[1]));
         for (const [k, v] of rows) if (k !== "장르") desc.push(`${k}: ${v}`);
+        // 0.1.2: 자막 표시 — 첫 플레이어 화면(1번 요청, 5초 안)에서 HAS_CAPTION 확인
+        let capLine = "";
+        if (urls.length && gget("avovo_sub", "true") !== "false") {
+            try {
+                const rr = await Promise.race([
+                    this.client.get(urls[0], { "User-Agent": UA, "Referer": SITE + "/", "Accept": "text/html,*/*" }),
+                    new Promise((ok) => setTimeout(() => ok(null), 5000)),
+                ]);
+                const pb = rr && Number(rr.statusCode) === 200 ? String(rr.body || "") : "";
+                if (pb) capLine = /CAP_SID\s*=\s*"[^"]+"/.test(pb) && !/HAS_CAPTION\s*=\s*false/.test(pb) ? "자막: 한국어 자막 있음" : "자막: 없음";
+            } catch (e) { capLine = ""; }
+        }
+        if (capLine) desc.unshift(capLine);
         // 올린 시각
         const t = /<time[^>]*>\s*(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/.exec(html);
         const when = t ? Date.UTC(+t[1], +t[2] - 1, +t[3], +t[4] - 9, +t[5]) : Date.now();
