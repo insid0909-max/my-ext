@@ -1,12 +1,11 @@
-// HLS 열쇠 중계: 확장이 보낸 재생 목록 + 정상 열쇠를 잠시 보관했다가
+// HLS 열쇠 중계 (공개 서버라 비밀값은 없음: 크기·형식 검사와 요청 횟수 제한만 한다): 확장이 보낸 재생 목록 + 정상 열쇠를 잠시 보관했다가
 // 재생 목록(열쇠 줄만 이쪽 주소로 바꿈)과 16바이트 열쇠를 돌려준다. 영상 조각은 건드리지 않는다.
 const http = require("http");
 const crypto = require("crypto");
-const SECRET = process.env.RELAY_SECRET || "tvroom-relay-1";
 const MAX_BODY = 400 * 1024, MAX_ITEMS = 300, TTL = 6 * 3600 * 1000;
 const store = new Map(); // id -> {playlist, key(Buffer), at}
 const hits = new Map(); // ip -> [times]
-function prune() { const now = Date.now(); for (const [k, v] of store) if (now - v.at > TTL) store.delete(k); while (store.size > MAX_ITEMS) store.delete(store.keys().next().value); }
+function prune() { const now = Date.now(); for (const [k, v] of hits) if (!v.length || now - v[v.length - 1] > 60000) hits.delete(k); while (hits.size > 5000) hits.delete(hits.keys().next().value); for (const [k, v] of store) if (now - v.at > TTL) store.delete(k); while (store.size > MAX_ITEMS) store.delete(store.keys().next().value); }
 function limited(ip) { const now = Date.now(), a = (hits.get(ip) || []).filter((t) => now - t < 60000); a.push(now); hits.set(ip, a); return a.length > 60; }
 function abs(base, u) {
   try { return new URL(u, base).toString(); } catch (e) { return u; }
@@ -20,15 +19,14 @@ function build(playlist, base) {
   }).join("\n") + "\n";
 }
 const server = http.createServer((req, res) => {
-  const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+  const xf = String(req.headers["x-forwarded-for"] || "").split(",").map((z) => z.trim()).filter(Boolean), ip = xf.length ? xf[xf.length - 1] : req.socket.remoteAddress || "";
   let path = req.url.split("?")[0].replace(/^\/port\/\d+/, "");
   const send = (code, body, type) => { res.writeHead(code, { "Content-Type": type || "text/plain; charset=utf-8", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" }); res.end(body); };
   if (limited(ip)) return send(429, "too many requests");
   if (req.method === "OPTIONS") return send(204, "");
   prune();
   if (req.method === "POST" && path === "/api/p") {
-    if (SECRET && req.headers["x-relay"] !== SECRET) return send(403, "forbidden");
-    let size = 0; const chunks = [];
+        let size = 0; const chunks = [];
     req.on("data", (c) => { size += c.length; if (size > MAX_BODY) { req.destroy(); } else chunks.push(c); });
     req.on("end", () => {
       try {
