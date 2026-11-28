@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.1.2",
+    "version": "0.1.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/avovo.js"
@@ -51,6 +51,10 @@ const RULE_CHOICES = [
 const RULE_NAME = "인기/최신 탭 규칙";
 const F_CAT = "분류";
 const F_ORDER = "정렬";
+const F_ACTOR = "배우 (예: 카와키타 사이카)";
+const F_GENRE = "장르 (예: 거유, 질내사정)";
+const F_STUDIO = "제작사 (예: FALENO)";
+const PREF_SORT = { date: "latest", views: "views", likes: "likes", comments: "comments" };
 const QUALITY_CHOICES = ["자동", "1080p", "720p", "480p", "360p"];
 const SUB_BUDGET_MS = 15000; // 자막 받기·풀기에 쓸 최대 시간 (넘으면 받은 만큼만)
 const SUB_PARALLEL = 12;
@@ -557,6 +561,10 @@ class DefaultExtension extends MProvider {
             sel(F_CAT, CATS),
             sel(F_ORDER, ORDERS),
             { type_name: "HeaderFilter", name: "분류 \"전체\"는 검색어가 있을 때 모든 게시판에서 찾음 (목록은 모자이크제거)" },
+            { type_name: "HeaderFilter", name: "내취향 검색: 아래 칸을 채우면 검색어는 무시 (여러 개는 쉼표로, 모두 만족하는 영상만)" },
+            { type_name: "TextFilter", name: F_ACTOR, state: "" },
+            { type_name: "TextFilter", name: F_GENRE, state: "" },
+            { type_name: "TextFilter", name: F_STUDIO, state: "" },
         ];
         list.push(...ruleFilters());
         list.push(...[1, 2, 3].map(() => ({ type_name: "HeaderFilter", name: "\u3000", _status: true })));
@@ -596,7 +604,59 @@ class DefaultExtension extends MProvider {
             }
             return Number(page) > 1 ? { list: [], hasNextPage: false } : this.getPopular(1);
         }
+        const fl = filters || [], tv = (n) => String((fl.find((x) => x && x.name === n) || {}).state || "").trim();
+        const names = { actor: tv(F_ACTOR), genre: tv(F_GENRE), studio: tv(F_STUDIO) };
+        if (names.actor || names.genre || names.studio) return this.prefSearch(names, page, fl);
         return se.call(this, query, page, filters);
+    };
+    // 0.1.3: 내취향 검색 — 사이트의 자동완성(JSON)으로 이름 → 번호, 그 번호들로 /search/results/ 를 읽음
+    DefaultExtension.prototype.prefIds = async function (kind, text) {
+        const ids = [];
+        for (const nm of String(text || "").split(/[,，、]/).map((x) => x.trim()).filter((x) => x).slice(0, 5)) {
+            const r = await this.client.get(`${SITE}/search/autocomplete/?type=${kind}&q=${encodeURIComponent(nm)}&limit=10`, { "User-Agent": UA, "Referer": SITE + "/search/preference/", "X-Requested-With": "XMLHttpRequest", "Accept": "application/json,*/*" });
+            if (Number(r.statusCode) !== 200) throw new Error(`이름 찾기 실패 [HTTP ${r.statusCode}]`);
+            let res = [];
+            try { res = JSON.parse(String(r.body || "{}")).results || []; } catch (e) { res = []; }
+            const norm = (x) => String(x || "").replace(/\s+/g, "").toLowerCase();
+            const hit = res.find((x) => norm(x.name) === norm(nm) || norm(x.name_en) === norm(nm) || norm(x.name_jp) === norm(nm)) || res[0];
+            const label = { actor: "배우", genre: "장르", studio: "제작사" }[kind];
+            if (!hit) throw new Error(`${label} "${nm}" 을(를) 사이트에서 찾지 못했어요`);
+            if (ids.indexOf(hit.id) < 0) ids.push(hit.id);
+        }
+        return ids;
+    };
+    DefaultExtension.prototype.prefSearch = async function (names, page, fl) {
+        const get = (n) => fl.find((x) => x && x.name === n);
+        const c = get(F_CAT), o = get(F_ORDER);
+        const cat = c ? Number(c.state) || 0 : 0, order = o ? Number(o.state) || 0 : 0;
+        const pr = [];
+        for (const [kind, key] of [["actor", "actors"], ["genre", "genres"], ["studio", "studios"]]) {
+            if (!names[kind]) continue;
+            const ids = await this.prefIds(kind, names[kind]);
+            if (ids.length) pr.push(`${key}=${ids.join(",")}`);
+        }
+        const sort = PREF_SORT[ORDERS[order] ? ORDERS[order][1] : "date"] || "latest";
+        if (sort !== "latest") pr.push(`sort=${sort}`);
+        const slug = CATS[cat] ? CATS[cat][1] : "";
+        if (slug) pr.push(`board=${slug}`);
+        const pg = Number(page) || 1;
+        if (pg > 1) pr.push(`page=${pg}`);
+        const r = await this.client.get(`${SITE}/search/results/?${pr.join("&")}`, { "User-Agent": UA, "Referer": SITE + "/search/preference/", "HX-Request": "true", "Accept": "text/html,*/*" });
+        if (Number(r.statusCode) !== 200) throw new Error(`내취향 검색 실패 [HTTP ${r.statusCode}]`);
+        const html = String(r.body || "");
+        const list = [], seen = {};
+        const re = /<a\s+href="(\/v\/[a-z0-9]+\/\d+\/)(?:\?[^"]*)?"[^>]*>([\s\S]*?)<\/a>/gi;
+        let m;
+        while ((m = re.exec(html))) {
+            if (seen[m[1]]) continue;
+            seen[m[1]] = true;
+            const t = /<div[^>]*class="text-xs truncate"[^>]*>([\s\S]*?)<\/div>/i.exec(m[2]) || /<div[^>]*class="font-(?:medium|semibold)[^"]*"[^>]*>([\s\S]*?)<\/div>/i.exec(m[2]);
+            const name = t ? strip(t[1]) : "";
+            if (!name) continue;
+            const im = /<img[^>]+src="(https?:\/\/[^"]+)"/i.exec(m[2]);
+            list.push({ name, imageUrl: im ? ent(im[1]) : "", link: m[1] });
+        }
+        return { list, hasNextPage: list.length > 0 && new RegExp(`[?&;]page=${pg + 1}(?!\\d)`).test(html) };
     };
     const gd = DefaultExtension.prototype.getDetail, gv = DefaultExtension.prototype.getVideoList;
     DefaultExtension.prototype.getDetail = function () { syncSite(); return gd.apply(this, arguments); };
