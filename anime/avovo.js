@@ -8,7 +8,7 @@ const mangayomiSources = [{
     "itemType": 1,
     "isNsfw": true,
     "hasCloudflare": false,
-    "version": "0.0.1",
+    "version": "0.0.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/avovo.js"
@@ -22,7 +22,8 @@ const mangayomiSources = [{
 //   영상은 x-data 의 urls: ["https://play.cdnvplay.com/v.php?v=JAV1/…/품번.mp4&cover=…"] (\u003D \u0026 \u002D 로 적혀 있음)
 // - 재생: 플레이어 화면 <video data-src="https://vcdn.cdnvplay.com/bcdn_token=…&expires=…&token_path=%2F/JAV1/…mp4">
 //   웹뷰·암호 없음. 영상 요청에 Referer=https://play.cdnvplay.com/ 가 있어야 열림(없으면 403). 토큰은 시간 제한이라 재생 직전에 받음.
-//   자막(품번_ai.srt)은 플레이어가 따로 내려받는 방식(서명 필요 추정)이라 아직 안 넣음.
+//   자막: 플레이어 화면 CAP_SID → caption.php (아래 "자막" 부분 참고)
+// 0.0.2 (2026-11-28): 한국어 자막 — 플레이어 caption.php 의 조각별 AES-GCM 자막을 풀어 WEBVTT 로 붙임(설정에서 끌 수 있음)
 // 0.0.1 (2026-11-28): 첫 시험판 — 게시판 6개 · 정렬 4개 · 전체 검색 · 인기/최신 탭 규칙 · 새 주소 자동 따라가기 · 선호 화질 · 📡/📝 줄
 
 const DEFAULT_SITE = "https://03.avovo.net";
@@ -51,6 +52,8 @@ const RULE_NAME = "인기/최신 탭 규칙";
 const F_CAT = "분류";
 const F_ORDER = "정렬";
 const QUALITY_CHOICES = ["자동", "1080p", "720p", "480p", "360p"];
+const SUB_BUDGET_MS = 15000; // 자막 받기·풀기에 쓸 최대 시간 (넘으면 받은 만큼만)
+const SUB_PARALLEL = 12;
 
 let SITE = DEFAULT_SITE;
 
@@ -217,6 +220,154 @@ function statusLines() {
     return lines;
 }
 
+
+// ---------- 자막 (플레이어 caption.php 의 암호 자막을 풀어 WEBVTT 로) ----------
+// 흐름: 플레이어 화면 CAP_SID → caption.php?a=boot&sid= → {seg:60, segs:[{i, iv, ct}]} (60초 조각마다 AES-GCM)
+//       → caption.php?a=key&sid=&i= → {k} (조각 열쇠, 재생 위치와 상관없이 받아짐, 403·429 면 retry 초 뒤 다시)
+//       → 풀면 [[시작초, 끝초, "글"], …]. 웹뷰·WebCrypto 없이 쓰려고 AES 를 직접 구현(GCM 은 CTR 이라 암호화 방향만 필요, 인증 태그는 확인 안 함)
+const SBOX = (function () {
+    const s = new Array(256), inv = new Array(256);
+    let p = 1, q = 1;
+    do {
+        p = p ^ ((p << 1) & 0xff) ^ (p & 0x80 ? 0x1b : 0);
+        q ^= q << 1; q ^= q << 2; q ^= q << 4; q &= 0xff; if (q & 0x80) q ^= 0x09;
+        const x = q ^ ((q << 1) | (q >> 7)) ^ ((q << 2) | (q >> 6)) ^ ((q << 3) | (q >> 5)) ^ ((q << 4) | (q >> 4));
+        s[p] = (x ^ 0x63) & 0xff;
+    } while (p !== 1);
+    s[0] = 0x63;
+    return s;
+})();
+function aesExpand(key) {
+    const nk = key.length / 4, nr = nk + 6, w = new Array(4 * (nr + 1));
+    for (let i = 0; i < nk; i++) w[i] = (key[4 * i] << 24) | (key[4 * i + 1] << 16) | (key[4 * i + 2] << 8) | key[4 * i + 3];
+    let rc = 1;
+    for (let i = nk; i < w.length; i++) {
+        let t = w[i - 1];
+        if (i % nk === 0) {
+            t = (t << 8) | (t >>> 24);
+            t = (SBOX[t >>> 24] << 24) | (SBOX[(t >> 16) & 255] << 16) | (SBOX[(t >> 8) & 255] << 8) | SBOX[t & 255];
+            t ^= rc << 24; rc = (rc << 1) ^ (rc & 0x80 ? 0x11b : 0);
+        } else if (nk > 6 && i % nk === 4) {
+            t = (SBOX[t >>> 24] << 24) | (SBOX[(t >> 16) & 255] << 16) | (SBOX[(t >> 8) & 255] << 8) | SBOX[t & 255];
+        }
+        w[i] = (w[i - nk] ^ t) | 0;
+    }
+    return { w, nr };
+}
+function xt(a) { return ((a << 1) ^ (a & 0x80 ? 0x1b : 0)) & 255; }
+function aesBlock(ks, input) {
+    const s = new Array(16), { w, nr } = ks;
+    for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) s[4 * c + r] = input[4 * c + r] ^ ((w[c] >>> (24 - 8 * r)) & 255);
+    for (let round = 1; round <= nr; round++) {
+        const t = new Array(16);
+        for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) t[4 * c + r] = SBOX[s[4 * ((c + r) % 4) + r]];
+        if (round < nr) {
+            for (let c = 0; c < 4; c++) {
+                const a0 = t[4 * c], a1 = t[4 * c + 1], a2 = t[4 * c + 2], a3 = t[4 * c + 3];
+                const x = a0 ^ a1 ^ a2 ^ a3;
+                s[4 * c] = a0 ^ x ^ xt(a0 ^ a1);
+                s[4 * c + 1] = a1 ^ x ^ xt(a1 ^ a2);
+                s[4 * c + 2] = a2 ^ x ^ xt(a2 ^ a3);
+                s[4 * c + 3] = a3 ^ x ^ xt(a3 ^ a0);
+            }
+        } else for (let i = 0; i < 16; i++) s[i] = t[i];
+        for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) s[4 * c + r] ^= (w[4 * round + c] >>> (24 - 8 * r)) & 255;
+    }
+    return s;
+}
+// AES-GCM 풀기 (iv 12바이트, 끝 16바이트는 태그): 카운터는 2 부터
+function gcmDecrypt(key, iv, data) {
+    const ks = aesExpand(key), n = data.length - 16, out = new Array(n);
+    const ctr = new Array(16);
+    for (let i = 0; i < 12; i++) ctr[i] = iv[i];
+    for (let b = 0, c = 2; b * 16 < n; b++, c++) {
+        ctr[12] = (c >>> 24) & 255; ctr[13] = (c >>> 16) & 255; ctr[14] = (c >>> 8) & 255; ctr[15] = c & 255;
+        const ksb = aesBlock(ks, ctr);
+        for (let i = 0; i < 16 && b * 16 + i < n; i++) out[b * 16 + i] = data[b * 16 + i] ^ ksb[i];
+    }
+    return out;
+}
+function b64uBytes(v) {
+    const T = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const s = String(v || "").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const out = [];
+    let acc = 0, bits = 0;
+    for (let i = 0; i < s.length; i++) {
+        const x = T.indexOf(s.charAt(i));
+        if (x < 0) continue;
+        acc = (acc << 6) | x; bits += 6;
+        if (bits >= 8) { bits -= 8; out.push((acc >> bits) & 255); acc &= (1 << bits) - 1; }
+    }
+    return out;
+}
+function utf8Text(b) {
+    let s = "";
+    for (let i = 0; i < b.length;) {
+        const c = b[i++];
+        if (c < 0x80) s += String.fromCharCode(c);
+        else if (c < 0xe0) s += String.fromCharCode(((c & 31) << 6) | (b[i++] & 63));
+        else if (c < 0xf0) { const c2 = b[i++], c3 = b[i++]; s += String.fromCharCode(((c & 15) << 12) | ((c2 & 63) << 6) | (c3 & 63)); }
+        else { const c2 = b[i++], c3 = b[i++], c4 = b[i++]; let cp = ((c & 7) << 18) | ((c2 & 63) << 12) | ((c3 & 63) << 6) | (c4 & 63); cp -= 0x10000; s += String.fromCharCode(0xd800 + (cp >> 10), 0xdc00 + (cp & 1023)); }
+    }
+    return s;
+}
+function vttTime(t) {
+    const ms = Math.max(0, Math.round(Number(t) * 1000)), p = (n, l) => String(n).padStart(l || 2, "0");
+    return `${p(Math.floor(ms / 3600000))}:${p(Math.floor(ms / 60000) % 60)}:${p(Math.floor(ms / 1000) % 60)}.${p(ms % 1000, 3)}`;
+}
+// 반환: { subs: [{file,label}], info: "자막 N줄" 같은 짧은 설명 }
+async function fetchSubs(client, playerBody, playerUrl) {
+    const m = /CAP_SID\s*=\s*"([^"]+)"/.exec(playerBody);
+    if (!m) return { subs: [], info: "자막 없음" };
+    if (/HAS_CAPTION\s*=\s*false/.test(playerBody)) return { subs: [], info: "자막 없음" };
+    const origin = (/^https?:\/\/[^/]+/.exec(playerUrl) || [PLAYER_ORIGIN])[0];
+    const h = { "User-Agent": UA, "Referer": playerUrl, "Accept": "application/json,*/*" };
+    const sid = encodeURIComponent(m[1]);
+    const t0 = Date.now(), left = () => SUB_BUDGET_MS - (Date.now() - t0);
+    let boot;
+    try {
+        const r = await client.get(`${origin}/caption.php?a=boot&sid=${sid}`, h);
+        if (Number(r.statusCode) !== 200) return { subs: [], info: `자막 목록 HTTP ${r.statusCode}` };
+        boot = JSON.parse(String(r.body || "{}"));
+    } catch (e) { return { subs: [], info: "자막 목록 못 받음" }; }
+    const segs = (boot.segs || []).filter((x) => x && x.ct && x.iv);
+    if (!segs.length) return { subs: [], info: "자막 없음" };
+    const cues = [];
+    let done = 0, next = 0, fail = 0;
+    const work = async () => {
+        while (next < segs.length && left() > 0) {
+            const sg = segs[next++];
+            let ok = false;
+            for (let tryNo = 0; tryNo < 2 && !ok && left() > 0; tryNo++) {
+                try {
+                    const r = await client.get(`${origin}/caption.php?a=key&sid=${sid}&i=${sg.i}`, h);
+                    const code = Number(r.statusCode);
+                    if (code === 403 || code === 429) {
+                        let wait = 3;
+                        try { wait = Math.min(Math.max(Number(JSON.parse(String(r.body || "{}")).retry) || 3, 1), 4); } catch (e) { /* 기본 */ }
+                        await new Promise((res) => setTimeout(res, wait * 1000));
+                        continue;
+                    }
+                    if (code !== 200) continue;
+                    const k = JSON.parse(String(r.body || "{}")).k;
+                    const plain = gcmDecrypt(b64uBytes(k), b64uBytes(sg.iv), b64uBytes(sg.ct));
+                    const arr = JSON.parse(utf8Text(plain));
+                    for (const c of arr) if (Array.isArray(c) && c.length >= 3 && String(c[2]).trim()) cues.push({ s: Number(c[0]), e: Number(c[1]), t: String(c[2]) });
+                    ok = true;
+                } catch (e) { /* 다음 시도 */ }
+            }
+            if (ok) done++; else fail++;
+        }
+    };
+    const n = Math.min(SUB_PARALLEL, segs.length);
+    await Promise.all(Array.from({ length: n }, () => work()));
+    if (!cues.length) return { subs: [], info: `자막 풀기 실패 (${done}/${segs.length})` };
+    cues.sort((a, b) => a.s - b.s);
+    let vtt = "WEBVTT\n\n";
+    cues.forEach((c, i) => { vtt += `${i + 1}\n${vttTime(c.s)} --> ${vttTime(Math.max(c.e, c.s + 0.5))}\n${c.t.replace(/\r/g, "").replace(/\n{2,}/g, "\n")}\n\n`; });
+    return { subs: [{ file: vtt, label: "한국어" }], info: `자막 ${cues.length}줄${done < segs.length ? ` (${done}/${segs.length}조각)` : ""}` };
+}
+
 // ---------- 본체 ----------
 class DefaultExtension extends MProvider {
     constructor() {
@@ -375,10 +526,14 @@ class DefaultExtension extends MProvider {
         }
         if (!found.length) throw new Error(`영상 주소를 못 찾았어요 [${why || "플레이어 화면에 영상 주소 없음"} · 화면 ${body.length}자]`);
         const headers = { "User-Agent": UA, "Referer": origin + "/", "Accept": "*/*" };
+        let sub = { subs: [], info: "" };
+        if (gget("avovo_sub", "true") !== "false") {
+            try { sub = await fetchSubs(this.client, body, player); } catch (e) { sub = { subs: [], info: "자막 오류" }; }
+        }
         const list = found.map((u, i) => ({
             url: u, originalUrl: u,
-            quality: withRes(`아보보 ${/\.m3u8/i.test(u) ? "HLS" : "MP4"}${i ? " #" + (i + 1) : ""}`, u),
-            headers, subtitles: [],
+            quality: withRes(`아보보 ${/\.m3u8/i.test(u) ? "HLS" : "MP4"}${i ? " #" + (i + 1) : ""}`, u) + (sub.info ? ` · ${sub.info}` : ""),
+            headers, subtitles: sub.subs,
         }));
         return qualitySort(list);
     }
@@ -399,6 +554,7 @@ class DefaultExtension extends MProvider {
         return [
             { key: "avovo_domain", editTextPreference: { title: "아보보 주소", summary: "비워 두면 기본·자동 주소를 씁니다. 직접 넣은 주소가 우선이고, 더 새 주소가 확인되면 자동으로 바뀝니다. (예: https://03.avovo.net)", value: "", dialogTitle: "아보보 주소", dialogMessage: "https://03.avovo.net 형식" } },
             { key: "avovo_auto", listPreference: { title: "새 주소 자동 따라가기", summary: "저장소 주소 목록·넘겨 주는 주소를 확인해 새 주소로 바꿉니다.", valueIndex: 0, entries: ["켬", "끔"], entryValues: ["true", "false"] } },
+            { key: "avovo_sub", listPreference: { title: "자막 가져오기", summary: "플레이어의 한국어 자막을 받아 풀어서 붙입니다. 재생 시작이 몇 초 늦어질 수 있어요. 끄면 자막 없이 바로 재생.", valueIndex: 0, entries: ["켬", "끔"], entryValues: ["true", "false"] } },
             { key: "avovo_quality", listPreference: { title: "선호 화질", summary: "영상이 여러 화질로 올 때 이 화질을 먼저 재생합니다. 지금은 화질이 하나뿐이라 달라지지 않습니다.", valueIndex: 0, entries: QUALITY_CHOICES, entryValues: QUALITY_CHOICES } },
         ];
     }
