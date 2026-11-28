@@ -76,16 +76,16 @@
     "dateFormatLocale": "",
     "isNsfw": false,
     "hasCloudflare": false,
-    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom.js?v=1.0.37",
+    "sourceCodeUrl": "https://raw.githubusercontent.com/insid0909-max/my-ext/main/anime/tvroom.js?v=1.0.38",
     "apiUrl": "",
-    "version": "1.0.37",
+    "version": "1.0.38",
     "isManga": false,
     "itemType": 1,
     "isFullData": false,
     "appMinVerReq": "0.5.0",
     "additionalParams": "",
     "sourceCodeLanguage": 1,
-    "notes": "Mangayomi Glitch 전용. 순정 Mangayomi에서는 재생을 지원하지 않습니다."
+    "notes": ""
   },
   {
     "name": "애니야24",
